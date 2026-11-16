@@ -1,17 +1,14 @@
 #!/usr/bin/env bash
-# Run the example for one species on the CPU with the precomputed attention.
-#   bash examples/run_example.sh arabidopsis [workers]
-#   bash examples/run_example.sh maize [workers]
+# Run the A. thaliana example on the CPU with the precomputed PlantDNA16K-FM attention.
+#   bash examples/run_example.sh [workers]
+# 1. genome-wide mode: weighted Bonferroni eGenes and SuSiE, lambda cross-fitted over chromosomes 1-3 / 4-5
+# 2. single-gene mode: FLC (AT5G10140), Bonferroni over its own 242 variants, lambda = 1.65
 # To recompute the attention on a GPU first, see examples/README.md.
 set -euo pipefail
-sp=${1:?usage: run_example.sh arabidopsis|maize [workers]}; workers=${2:-4}
+workers=${1:-4}
 cd "$(dirname "$0")/.."
-case $sp in
-  arabidopsis) d=examples/arabidopsis; c=5;  gff=$d/TAIR10_chr5.gff3.gz;     att=attention/arabidopsis_TAIR10_PlantDNA-FM.parquet ;;
-  maize)       d=examples/maize;       c=10; gff=$d/AGPv3.31_chr10.gff3.gz; att=attention/maize_AGPv3_PlantDNA-FM.parquet ;;
-  *) echo "unknown species: $sp" >&2; exit 1 ;;
-esac
-out=results/$sp; mkdir -p $out
-plantdna-finemap windows --gff $gff --out $out/windows.tsv
-plantdna-finemap map --vcf $d/genotypes_chr$c.vcf.gz --expression $d/expression_chr$c.tsv.gz --windows $out/windows.tsv \
-  --kinship $d/kinship.tsv.gz --attention $att --out $out --workers $workers
+d=examples/arabidopsis
+plantdna-finemap finemap --tests $d/tests_B2.tsv.gz --expression $d/expression_B2.tsv.gz --genotypes $d/genotypes_B2 \
+  --attention $d/attention_PlantDNA16K-FM.parquet --out results/arabidopsis --workers $workers
+plantdna-finemap finemap --tests $d/tests_B2.tsv.gz --expression $d/expression_B2.tsv.gz --genotypes $d/genotypes_B2 \
+  --attention $d/attention_PlantDNA16K-FM.parquet --single-gene AT5G10140 --lambda 1.65 --out results/arabidopsis_FLC --workers 1

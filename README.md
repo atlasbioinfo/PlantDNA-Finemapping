@@ -20,7 +20,7 @@ Definitions used throughout:
 
 The association test itself is not part of this package: `finemap` takes one row per variant–gene test from any GWAS tool, for example GEMMA run per gene on the variants in gene body ± 10 kb, as in Voichek *et al.*
 
-**Attention score.** For each gene, the region gene body ± 10 kb, extended to cover every tested variant of the gene, is tiled with 16-kb windows at a step of 8 kb. Each window is read in the direction of transcription and run through the model once. The query positions are the exon positions of the gene (all positions if the window contains no exon of the gene); attention from these positions is averaged over all layers and heads (36 layers × 12 heads = 432 attention matrices), giving one score per position. The score of a variant is the mean over the windows that contain an exon of the gene, otherwise over the other windows.
+**Attention score.** For each gene, the region gene body ± 10 kb, extended to cover every tested variant of the gene, is tiled with 16-kb windows at a step of 8 kb. Each window is read in the direction of transcription and run through the model once. The query positions are the exon positions of the gene (all positions if the window contains no exon of the gene, or if the gene has no `<gene>.1` / `<gene>_T01` transcript); attention from these positions is averaged over all layers and heads (36 layers × 12 heads = 432 attention matrices), giving one score per position. The score of a variant is the mean over the windows that contain an exon of the gene, otherwise over the other windows.
 
 **Prior weights.** *q* is the attention score rank-normalised within each gene (ties get the average rank; variants without a score get *q* = 0, a neutral weight). The weight is *w* = exp(λ*q*), scaled to a mean of 1 within each gene.
 
@@ -90,7 +90,7 @@ Without `--attention`, `finemap` reports the uniform prior only.
 | association tests (`--tests`) | TSV (optionally gzipped) or parquet, one row per variant–gene test: `gene`, `chrom` (or `chr`), `pos` (or `ps`), and `logp` (−log₁₀*P*) or `p` (also `p_wald`, `p_lrt`, `p_score`). Every row counts towards *M* (or set *M* with `--n-tests`). |
 | expression (`--expression`) | TSV: first column gene ID, then one column per accession; missing values allowed. Use the values that went into the association test. |
 | genotypes (`--genotypes`) | PLINK 1 fileset (prefix of `.bed`/`.bim`/`.fam`; samples = IID), a bgzipped VCF with a tabix index (GT, biallelic SNVs only) or a numpy `.npz` with arrays `samples`, `chrom`, `pos` and `dosage` (samples × variants; NaN or negative = missing). Variants are matched to the tests by chromosome and position; tested variants missing from the genotypes are left out of fine-mapping. |
-| annotation (`genes --gff`) | GFF3 with `gene`, `mRNA`/`transcript` and `exon` features (Ensembl style: `ID=gene:…`, `Parent=transcript:…`). Genes with `biotype=protein_coding` are kept (`--all-biotypes` keeps all). The representative transcript is `<gene>.1` or `<gene>_T01`, otherwise the one with the longest total exon length. |
+| annotation (`genes --gff`) | GFF3 with `gene`, `mRNA`/`transcript` and `exon` features (Ensembl style: `ID=gene:…`, `Parent=transcript:…`). Genes with `biotype=protein_coding` are kept (`--all-biotypes` keeps all). The query exons are those of the transcript `<gene>.1` or `<gene>_T01`; genes without such a transcript use all positions as queries in every window. |
 | reference (`attention --fasta`) | FASTA with a `.fai` index (plain or bgzipped) |
 | attention (`finemap --attention`) | parquet or TSV with columns `gene`, `pos`, `attention` (output of `attention`) |
 
@@ -143,7 +143,7 @@ Checked against the analysis in the paper:
 
 | step | check | result |
 |---|---|---|
-| `attention` | the 892 example genes (248,022 variant–gene pairs, 1,915 windows), recomputed with this code on an RTX 5090 (44 min) | 891 genes: largest relative difference to the paper's scores 2.4 × 10⁻⁷. AT4G00520 differs: it has no `.1` transcript, so this code queries the exons of its longest transcript, whereas the paper's run used all positions; the example ships the paper's scores |
+| `attention` | the 892 example genes (248,022 variant–gene pairs, 1,915 windows), recomputed with this code on an RTX 5090 (44 min) | largest relative difference to the paper's scores 2.4 × 10⁻⁷ (AT4G00520, the one example gene without a `.1` transcript, all positions as queries: 2.2 × 10⁻⁷) |
 | `finemap` | the 892 example genes with the paper's settings (`--n-tests 4297320 --lambda 1.35,1.65`) | the same eGenes (259 / 270 under the uniform / PlantDNA16K-FM prior) and the same 417 / 421 credible sets; PIPs within 4 × 10⁻⁵ |
 | `finemap --single-gene` | *FLC* | the same credible sets as the candidate-gene analysis for the paper at λ = 1.6 (7 / 6 variants; with `--susie-all` 4, 3, 2 / 4, 2, 2); λ = 1.65 gives the same sets |
 

@@ -1,8 +1,9 @@
 """Gene table and representative-transcript exons from a GFF3 file.
 
 One row per gene: chrom, strand, gene_start, gene_end (1-based, inclusive, from the gene feature) and
-the exons of one representative transcript, which are the query positions of the attention readout:
-<gene>.1 or <gene>_T01 if present, otherwise the transcript with the longest total exon length.
+the exons of the representative transcript <gene>.1 (A. thaliana) or <gene>_T01 (maize), which are the query
+positions of the attention readout. Genes without such a transcript get no exons, so every window of the gene
+uses all positions as queries (as in the paper).
 """
 import gzip
 import pandas as pd
@@ -52,9 +53,8 @@ def read_gff(path, biotype="protein_coding"):
         if not ts:
             continue
         t = next((c for c in (f"{g}.1", f"{g}_T01") if c in ts), None)
-        if t is None:
-            t = max(ts, key=lambda x: sum(e - s + 1 for s, e in ex[x]))
-        exons[g] = sorted(set(ex[t]))
+        if t is not None:
+            exons[g] = sorted(set(ex[t]))
     return G, exons
 
 

@@ -1,15 +1,11 @@
-"""Gene windows and representative-transcript exons from a GFF3 file.
+"""Gene table and representative-transcript exons from a GFF3 file.
 
-Each gene gets one 8-kb window, TSS -3 kb ... +5 kb in the direction of transcription
-(plus strand [tss - 3000, tss + 4999], minus strand [tss - 4999, tss + 3000]); the TSS is the
-5' end of the gene feature. The exons of one representative transcript per gene are the query
-rows of the attention readout: <gene>.1 or <gene>_T01 if present, otherwise the transcript with
-the longest total exon length.
+One row per gene: chrom, strand, gene_start, gene_end (1-based, inclusive, from the gene feature) and
+the exons of one representative transcript, which are the query positions of the attention readout:
+<gene>.1 or <gene>_T01 if present, otherwise the transcript with the longest total exon length.
 """
 import gzip
 import pandas as pd
-
-UPSTREAM, DOWNSTREAM = 3000, 5000
 
 
 def _open(path):
@@ -62,16 +58,12 @@ def read_gff(path, biotype="protein_coding"):
     return G, exons
 
 
-def make_windows(gff, biotype="protein_coding", chroms=None):
-    """Windows table: gene chrom strand gene_start gene_end tss win_start win_end exons ("start-end,..." genomic)."""
+def make_genes(gff, biotype="protein_coding", chroms=None):
+    """Gene table: gene chrom strand gene_start gene_end exons ("start-end,..." genomic, 1-based)."""
     G, exons = read_gff(gff, biotype)
     if chroms:
         G = G[G.chrom.isin(chroms)]
-    plus = G.strand == "+"
-    G = G.assign(tss=G.gene_start.where(plus, G.gene_end))
-    G["win_start"] = (G.tss - UPSTREAM).where(plus, G.tss - DOWNSTREAM + 1)
-    G["win_end"] = (G.tss + DOWNSTREAM - 1).where(plus, G.tss + UPSTREAM)
-    G["exons"] = [",".join(f"{s}-{e}" for s, e in exons.get(g, [])) for g in G.gene]
+    G = G.assign(exons=[",".join(f"{s}-{e}" for s, e in exons.get(g, [])) for g in G.gene])
     return G.reset_index(drop=True)
 
 
@@ -79,5 +71,5 @@ def parse_exons(s):
     return [tuple(int(v) for v in x.split("-")) for x in s.split(",")] if isinstance(s, str) and s else []
 
 
-def read_windows(path):
+def read_genes(path):
     return pd.read_csv(path, sep="\t", dtype={"chrom": str, "gene": str}, keep_default_na=False)

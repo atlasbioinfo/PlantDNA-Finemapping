@@ -125,5 +125,20 @@ def test_genes(tmp_path):
     assert list(G.index) == ["G1", "G2"]
     assert (G.at["G2", "strand"], G.at["G2", "gene_start"], G.at["G2", "gene_end"]) == ("-", 9000, 9900)
     assert parse_exons(G.at["G1", "exons"]) == [(5000, 5100), (6000, 6500)]      # <gene>.1 preferred
-    assert parse_exons(G.at["G2", "exons"]) == [(9000, 9900)]                    # otherwise longest
+    assert G.at["G2", "exons"] == ""                     # no <gene>.1 / <gene>_T01 transcript: all positions are queries
     assert "R1" in set(make_genes(str(gff), biotype=None).gene)
+
+
+def test_example_gene_without_dot1_uses_all_positions():
+    """AT4G00520 has only .3/.4 transcripts: no exons, so every window queries all positions, as in the paper."""
+    from pathlib import Path
+    from plantdna_finemap.attention import window_sequence
+    gff = Path(__file__).resolve().parents[1] / "examples/arabidopsis/TAIR10_example.gff3.gz"
+    G = make_genes(str(gff), biotype=None).set_index("gene")
+    assert G.at["AT4G00520", "exons"] == "" and (G.exons != "").sum() == len(G) - 1
+
+    class Fa:
+        def fetch(self, c, a, b):
+            return "A" * (b - a)
+    _, ex = window_sequence(Fa(), {"4": 10 ** 6}, "4", 220000, 16000, "+", parse_exons(G.at["AT4G00520", "exons"]))
+    assert not ex.any()

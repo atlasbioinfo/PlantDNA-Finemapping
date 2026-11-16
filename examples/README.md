@@ -7,7 +7,7 @@
 | `tests_B2.tsv.gz` | 248,022 GEMMA tests of Voichek *et al.* (gene, chrom, pos, maf, logp = −log₁₀*P*); variants in gene body ± 10 kb |
 | `expression_B2.tsv.gz` | expression of the 892 genes in the 471 accessions, as used for the tests |
 | `genotypes_B2.bed/.bim/.fam` | PLINK 1 fileset of the 60,582 tested positions that are biallelic SNVs in the 1001 Genomes VCF (A1 = ALT), 471 accessions |
-| `attention_PlantDNA16K-FM.parquet` | PlantDNA16K-FM attention score of every test, as used in the paper (format of the `attention` output) |
+| `attention_PlantDNA16K-FM.parquet` | PlantDNA16K-FM attention score of every test, as used in the paper (same as the `attention` output) |
 | `TAIR10_example.gff3.gz` | TAIR10 / Araport11 annotation (Ensembl Plants) of the example regions; input of `genes` |
 
 ## Run (CPU)
@@ -45,7 +45,7 @@ plantdna-finemap attention --model ATLASBIOINFO/PlantDNA16K-FM --genes results/g
     --fasta examples/arabidopsis/TAIR10.fa --tests examples/arabidopsis/tests_B2.tsv.gz --out results/attention
 ```
 
-Then pass `--attention results/attention/attention.parquet` to `finemap`. `--all-biotypes` keeps the few tested genes that are not protein-coding. The model ID is a placeholder until the 16K weights are on Hugging Face (see the main README); a local model directory works too. On an RTX 5090 the 892 genes (1,915 windows) take 44 min. The result matches the shipped scores (the paper's) to a relative difference of 2.4 × 10⁻⁷, except for AT4G00520, which has no `.1` transcript: this code queries the exons of its longest transcript, the paper's run used all positions.
+Then pass `--attention results/attention/attention.parquet` to `finemap`. `--all-biotypes` keeps the few tested genes that are not protein-coding. The model ID is a placeholder until the 16K weights are on Hugging Face (see the main README); a local model directory works too. On an RTX 5090 the 892 genes (1,915 windows) take 44 min. The result matches the shipped scores (the paper's) to a relative difference of 2.4 × 10⁻⁷, including AT4G00520, which has no `.1` transcript and therefore uses all positions as queries.
 
 ## Sources
 

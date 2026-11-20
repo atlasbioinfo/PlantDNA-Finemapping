@@ -51,7 +51,7 @@ def main(argv=None):
     p.add_argument("--kinship-every", type=int, default=1, help="use every n-th variant for the relatedness matrix (default 1)")
     p.add_argument("--workers", type=int, default=4)
 
-    p = sub.add_parser("attention", help="per-variant PlantDNA16K-FM attention scores, sliding windows (GPU)")
+    p = sub.add_parser("attention", help="per-variant PlantDNA-FM attention scores, sliding windows (GPU)")
     p.add_argument("--model", required=True, help="model directory or Hugging Face model ID")
     p.add_argument("--genes", required=True, help="gene table (output of `genes`)")
     p.add_argument("--fasta", required=True, help="reference genome (indexed FASTA, plain or bgzipped)")

@@ -22,7 +22,7 @@ from .prior import gene_weights, rank_q, susie_pi, thresholds
 from .susie import susie
 from .xfit import default_folds, gene_codes, xfit
 
-PRIOR = "PlantDNA16K-FM"
+PRIOR = "PlantDNA-FM"
 _G = {}
 
 

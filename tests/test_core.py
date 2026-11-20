@@ -181,3 +181,16 @@ def test_plink_region_and_chunks(tmp_path):
     assert g.region("1", 400, 500)[1].shape == (n, 0)
     (c, P, X), = list(g.chunks())
     assert c == "1" and list(P) == [100, 200, 300] and np.array_equal(X, G[:, [1, 2, 0]])
+
+
+def test_plink_gzipped(tmp_path):
+    import gzip
+    from plantdna_finemap.genotypes import open_genotypes
+    with gzip.open(tmp_path / "g.bed.gz", "wb") as f:
+        f.write(bytes([0x6C, 0x1B, 0x01, 0b11100100]))          # 4 samples: hom A1, missing, het, hom A2
+    with gzip.open(tmp_path / "g.bim.gz", "wt") as f:
+        f.write("1\t1_50\t0\t50\tA\tC\n")
+    (tmp_path / "g.fam").write_text("".join(f"s{i} s{i} 0 0 0 -9\n" for i in range(4)))
+    g = open_genotypes(str(tmp_path / "g"))
+    P, X = g.fetch("1", [50], ["s0", "s1", "s2", "s3"])
+    assert list(P) == [50] and np.array_equal(np.nan_to_num(X[:, 0], nan=-1), [2, -1, 1, 0])

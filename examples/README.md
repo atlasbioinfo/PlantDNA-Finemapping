@@ -1,13 +1,14 @@
 # Example
 
-*A. thaliana* batch B2 (471 accessions): the 4,872 tested genes of chromosomes 2 and 4 (one chromosome for each cross-fitting fold) plus *FLC* (AT5G10140, chromosome 5).
+*A. thaliana* batch B2 (471 accessions): the 4,872 tested genes of chromosomes 2 and 4 plus *FLC* (AT5G10140, chromosome 5).
 
 | file | content |
 |---|---|
-| `tests_B2.tsv.gz` | 1,307,160 GEMMA tests of Voichek *et al.* (gene, chrom, pos, maf, logp = −log₁₀*P*); variants in gene body ± 10 kb |
+| `tests_B2.tsv.gz` | 1,307,160 GEMMA tests of Voichek *et al.* (gene, chrom, pos, maf, logp = −log₁₀*P*); variants in gene body ± 10 kb. These are the tests used in the paper. |
 | `expression_B2.tsv.gz` | expression of the 4,873 genes in the 471 accessions, as used for the tests |
-| `genotypes_B2.bed/.bim/.fam` | PLINK 1 fileset of the 385,382 tested positions that are biallelic SNVs in the 1001 Genomes VCF (A1 = ALT), 471 accessions |
-| `attention_PlantDNA16K-FM.parquet` | PlantDNA16K-FM attention score of every test, as used in the paper (same as the `attention` output) |
+| `genotypes_B2.bed.gz/.bim.gz/.fam` | PLINK 1 fileset (`.bed` and `.bim` gzipped; read directly) of the 385,382 tested positions that are biallelic SNVs in the 1001 Genomes VCF (A1 = ALT), 471 accessions |
+| `attention_PlantDNA-FM.parquet` | PlantDNA-FM attention score of every test, as used in the paper (same as the `attention` output) |
+| `kinship_B2.tsv.gz` | genome-wide relatedness matrix of the 471 accessions (755,957 SNPs of all five chromosomes); input of `assoc --kinship` |
 | `TAIR10_example.gff3.gz` | TAIR10 / Araport11 annotation (Ensembl Plants) of chromosomes 2 and 4 and of *FLC*; input of `genes` |
 
 ## Run (CPU)
@@ -18,44 +19,44 @@ bash examples/run_example.sh 8
 
 This runs three analyses (about 5 min with 8 workers on a 32-core server).
 
-**1. Fine-mapping with the published association tests**, λ cross-fitted between the two chromosomes:
+**1. The analysis of the paper for chromosomes 2 and 4.** The published association tests, the genome-wide number of tests of the paper (*M* = 4,297,315) and the λ of the paper (1.35 for chromosomes 1–3, 1.65 for chromosomes 4–5):
 
 ```bash
 plantdna-finemap finemap --tests examples/arabidopsis/tests_B2.tsv.gz --expression examples/arabidopsis/expression_B2.tsv.gz \
-    --genotypes examples/arabidopsis/genotypes_B2 --attention examples/arabidopsis/attention_PlantDNA16K-FM.parquet \
-    --folds 2:4,5 --out results/arabidopsis --workers 8
+    --genotypes examples/arabidopsis/genotypes_B2 --attention examples/arabidopsis/attention_PlantDNA-FM.parquet \
+    --folds 2:4,5 --n-tests 4297315 --lambda 1.35,1.65 --out results/arabidopsis --workers 8
 ```
 
-Expected `results/arabidopsis/summary.tsv`:
+Expected `results/arabidopsis/summary.tsv`, identical to the results of the paper for these two chromosomes:
 
-| prior | λ | genes tested | tests (*M*) | eGenes | eGenes with signal | expGWAS signals | single-variant signals | variants PIP > 0.9 | mean signal size |
+| prior | λ | genes tested | *M* | eGenes | eGenes with signal | expGWAS signals | single-variant signals | variants PIP > 0.9 | mean signal size |
 |---|---|---|---|---|---|---|---|---|---|
-| uniform | – | 4,873 | 1,307,160 | 1,401 | 1,395 | 2,247 | 822 | 943 | 4.78 |
-| PlantDNA16K-FM | 2.25 / 2.2 | 4,873 | 1,307,160 | 1,487 | 1,482 | 2,305 | 917 | 1,044 | 3.93 |
+| uniform | – | 4,873 | 4,297,315 | 1,314 | 1,307 | 2,114 | 797 | 904 | 4.65 |
+| PlantDNA-FM | 1.35 / 1.65 | 4,873 | 4,297,315 | 1,365 | 1,362 | 2,158 | 817 | 924 | 4.26 |
 
-*M* here is the number of tests in the example, so the threshold is less strict than genome-wide and λ is learned on two chromosomes only. With the paper's genome-wide *M* and λ (`--n-tests 4297315 --lambda 1.35,1.65`), the example gives the paper's results for chromosomes 2 and 4 exactly: 1,314 / 1,365 eGenes and 2,114 / 2,158 expGWAS signals.
-
-**2. Single-gene mode for *FLC*** (`--single-gene AT5G10140 --lambda 1.65`, Bonferroni over the 242 variants of *FLC*). Expected `results/arabidopsis_FLC/signals.tsv`: one signal under each prior, 7 variants (uniform; lead 3,178,749, PIP 0.70) and 6 variants (PlantDNA16K-FM; lead 3,178,749, PIP 0.81).
+**2. Single-gene mode for *FLC*** (`--single-gene AT5G10140 --lambda 1.65`, Bonferroni over the 242 variants of *FLC*). Expected `results/arabidopsis_FLC/signals.tsv`: one signal with each prior, 7 variants (uniform; lead 3,178,749, PIP 0.70) and 6 variants (PlantDNA-FM; lead 3,178,749, PIP 0.81).
 
 **3. The whole workflow from genotypes and expression**, as for your own data:
 
 ```bash
 plantdna-finemap genes --gff examples/arabidopsis/TAIR10_example.gff3.gz --all-biotypes --out results/genes.tsv
 plantdna-finemap assoc --genotypes examples/arabidopsis/genotypes_B2 --expression examples/arabidopsis/expression_B2.tsv.gz \
-    --genes results/genes.tsv --out results/assoc.tsv.gz --workers 8
+    --genes results/genes.tsv --kinship examples/arabidopsis/kinship_B2.tsv.gz --out results/assoc.tsv.gz --workers 8
 plantdna-finemap finemap --tests results/assoc.tsv.gz --expression examples/arabidopsis/expression_B2.tsv.gz \
-    --genotypes examples/arabidopsis/genotypes_B2 --attention examples/arabidopsis/attention_PlantDNA16K-FM.parquet \
-    --folds 2:4,5 --out results/arabidopsis_from_genotypes --workers 8
+    --genotypes examples/arabidopsis/genotypes_B2 --attention examples/arabidopsis/attention_PlantDNA-FM.parquet \
+    --folds 2:4,5 --n-tests 4297315 --lambda 1.35,1.65 --out results/arabidopsis_from_genotypes --workers 8
 ```
 
-`assoc` takes 15 s and gives 1,260,663 tests in 4,873 genes. Expected `results/arabidopsis_from_genotypes/summary.tsv`:
+Here the association tests are computed by `assoc` (15 s; 1,260,663 tests in 4,873 genes) instead of taken from the published GEMMA run. The two sets of tests agree closely (−log₁₀*P* correlated at *r* = 0.997), and so do the results. Expected `results/arabidopsis_from_genotypes/summary.tsv`:
 
-| prior | λ | genes tested | tests (*M*) | eGenes | eGenes with signal | expGWAS signals | single-variant signals | variants PIP > 0.9 | mean signal size |
+| prior | λ | genes tested | *M* | eGenes | eGenes with signal | expGWAS signals | single-variant signals | variants PIP > 0.9 | mean signal size |
 |---|---|---|---|---|---|---|---|---|---|
-| uniform | – | 4,873 | 1,260,663 | 1,376 | 1,370 | 2,223 | 813 | 936 | 4.74 |
-| PlantDNA16K-FM | 1.8 / 1.7 | 4,873 | 1,260,663 | 1,470 | 1,470 | 2,317 | 893 | 1,022 | 4.07 |
+| uniform | – | 4,873 | 4,297,315 | 1,306 | 1,303 | 2,107 | 795 | 915 | 4.63 |
+| PlantDNA-FM | 1.35 / 1.65 | 4,873 | 4,297,315 | 1,355 | 1,354 | 2,143 | 798 | 913 | 4.30 |
 
-These numbers differ a little from analysis 1 because the association tests differ: `assoc` uses its own mixed model with a relatedness matrix from the two example chromosomes, and it tests only the positions in the PLINK fileset. Its −log₁₀*P* values correlate at *r* = 0.987 with the GEMMA tests (0.998 with a genome-wide relatedness matrix). A VCF (`--genotypes file.vcf.gz`, bgzipped with a tabix index) works in the same way.
+1,281 of the 1,314 eGenes of the paper (uniform prior) and 1,333 of the 1,365 (PlantDNA-FM prior) are found again. A VCF (`--genotypes file.vcf.gz`, bgzipped with a tabix index) works in the same way as the PLINK fileset.
+
+On your own data, leave out `--n-tests`, `--lambda` and `--folds`: *M* is then the number of tests in your table and λ is learned by cross-fitting.
 
 ## Recompute the attention (GPU)
 

@@ -1,4 +1,4 @@
-"""Per-variant attention scores from PlantDNA16K-FM (GPU recommended).
+"""Per-variant attention scores from PlantDNA-FM (GPU recommended).
 
 For each gene, the region gene body +/- 10 kb, extended to cover every tested variant of the gene, is tiled
 with 16-kb windows at a step of 8 kb (the last window ends at the end of the region). Each window is read

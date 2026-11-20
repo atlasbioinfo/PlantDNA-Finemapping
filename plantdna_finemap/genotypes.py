@@ -2,9 +2,10 @@
 
 VCF: bgzipped and tabix-indexed; dosage = number of ALT alleles (0, 1, 2); a haploid call counts as
 homozygous; records that are not single-base biallelic SNVs (REF and ALT in A/C/G/T) are skipped.
-PLINK: dosage = number of A1 alleles. The sign of the dosage does not change SuSiE PIPs or credible sets.
+PLINK: dosage = number of A1 alleles; the .bed and .bim files may be gzipped (.bed.gz, .bim.gz). The sign of the dosage does not change SuSiE PIPs or credible sets.
 For duplicated positions the first record is kept. Chromosome names may differ by a chr / Chr prefix.
 """
+import gzip
 import os
 import numpy as np
 import pysam
@@ -160,14 +161,23 @@ class Plink(_Indexed):
     """PLINK 1 binary fileset (prefix.bed/.bim/.fam, SNP-major). Dosage = number of A1 alleles; samples = IID."""
 
     def __init__(self, prefix):
-        prefix = prefix[:-4] if prefix.endswith((".bed", ".bim", ".fam")) else prefix
-        bim = np.loadtxt(f"{prefix}.bim", dtype=str, ndmin=2)
+        for ext in (".bed.gz", ".bim.gz", ".bed", ".bim", ".fam"):
+            if prefix.endswith(ext):
+                prefix = prefix[:-len(ext)]
+                break
+        gz = lambda p: p if os.path.exists(p) else p + ".gz"          # .bed and .bim may be gzipped
+        bim = np.loadtxt(gz(f"{prefix}.bim"), dtype=str, ndmin=2)
         self.samples = [l.split()[1] for l in open(f"{prefix}.fam") if l.strip()]
         self._index(bim[:, 0], bim[:, 3].astype(np.int64))
         self._nb = (len(self.samples) + 3) // 4
-        self._bed = np.memmap(f"{prefix}.bed", np.uint8, "r")
+        bed = gz(f"{prefix}.bed")
+        if bed.endswith(".gz"):
+            with gzip.open(bed, "rb") as fh:
+                self._bed = np.frombuffer(fh.read(), np.uint8)
+        else:
+            self._bed = np.memmap(bed, np.uint8, "r")
         if self._bed[:3].tolist() != [0x6C, 0x1B, 0x01]:
-            raise ValueError(f"{prefix}.bed is not a SNP-major PLINK 1 .bed file")
+            raise ValueError(f"{bed} is not a SNP-major PLINK 1 .bed file")
 
     def _dosage(self, idx):
         b = np.stack([self._bed[3 + i * self._nb: 3 + (i + 1) * self._nb] for i in idx])
@@ -192,9 +202,9 @@ class NumpyGenotypes(_Indexed):
 
 
 def open_genotypes(path):
-    """VCF (.vcf.gz with .tbi), PLINK 1 fileset (prefix or .bed) or .npz."""
+    """VCF (.vcf.gz with .tbi), PLINK 1 fileset (prefix or .bed; .bed and .bim may be gzipped) or .npz."""
     if path.endswith(".npz"):
         return NumpyGenotypes(path)
-    if path.endswith(".bed") or os.path.exists(f"{path}.bed"):
+    if path.endswith((".bed", ".bed.gz")) or os.path.exists(f"{path}.bed") or os.path.exists(f"{path}.bed.gz"):
         return Plink(path)
     return VCF(path)

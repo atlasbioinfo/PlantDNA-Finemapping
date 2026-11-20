@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "plantdna-finemap"
-version = "0.2.0"
-description = "expGWAS fine-mapping in plant populations with PlantDNA16K-FM attention priors"
+version = "0.3.0"
+description = "expGWAS fine-mapping in plant populations with PlantDNA-FM attention priors"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy>=1.23", "scipy>=1.9", "pandas>=1.5", "pyarrow", "pysam>=0.21"]

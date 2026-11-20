@@ -1,6 +1,6 @@
 # PlantDNA-Finemapping
 
-expGWAS fine-mapping in plant populations with PlantDNA-FM attention priors: association tests, weighted Bonferroni eGene detection and SuSiE fine-mapping, starting from a VCF and an expression table.
+expGWAS fine-mapping in plant populations with PlantDNA-FM attention priors: weighted Bonferroni eGene detection and SuSiE fine-mapping.
 
 Association panels in plants are small and highly structured, so an expression GWAS (expGWAS) signal usually points to a block of variants in near-perfect linkage disequilibrium rather than to one variant. This code uses attention from [PlantDNA-FM](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM), a plant DNA foundation model with a 16-kb context, as a prior that ranks the variants within each gene, and applies the same prior to eGene detection and to fine-mapping.
 
@@ -13,11 +13,11 @@ Definitions used throughout:
 ## Contents
 
 - [Installation](#installation)
-- [Quick start: the bundled example](#quick-start-the-bundled-example-cpu-about-5-min)
+- [Quick start: the bundled example](#quick-start-the-bundled-example-cpu-about-3-min)
 - [User guide: your own data](#user-guide-your-own-data)
   - [What you need](#what-you-need)
   - [Step 1: `genes`](#step-1-genes--gene-table-from-the-annotation)
-  - [Step 2: `assoc`](#step-2-assoc--association-tests)
+  - [Step 2: association tests](#step-2-association-tests)
   - [Step 3: `attention`](#step-3-attention--plantdna-fm-attention-scores-gpu)
   - [Step 4: `finemap`](#step-4-finemap--egenes-and-expgwas-signals)
   - [Candidate gene](#candidate-gene-single-gene-mode)
@@ -37,7 +37,7 @@ pip install ".[attention]"     # also the GPU step (PyTorch, transformers)
 
 Requires Python ≥ 3.9 and numpy, scipy, pandas, pyarrow and pysam. The attention step was tested with PyTorch 2.10 and transformers 5.9 on an RTX 5090 (about 1.4 s per 16-kb window). The model is downloaded from Hugging Face ([`ATLASBIOINFO/PlantDNA-FM`](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM)) the first time `attention` runs.
 
-## Quick start: the bundled example (CPU, about 5 min)
+## Quick start: the bundled example (CPU, about 3 min)
 
 ```bash
 bash examples/run_example.sh 8      # 8 worker processes
@@ -45,9 +45,8 @@ bash examples/run_example.sh 8      # 8 worker processes
 
 The example is *A. thaliana* batch B2 (471 accessions) for the 4,872 tested genes of chromosomes 2 and 4 plus *FLC*. The script runs
 
-1. `finemap` with the association tests and the settings of the paper; the output is the paper's result for these two chromosomes (1,314 eGenes with the uniform prior and 1,365 with the PlantDNA-FM prior);
-2. `finemap` in single-gene mode for *FLC*;
-3. the whole workflow from the genotypes and the expression table (`genes`, `assoc`, `finemap`), as you would run it on your own data.
+1. `finemap` with the association tests of the paper (the GEMMA results of Voichek *et al.*) and the settings of the paper; the output is the paper's result for these two chromosomes (1,314 eGenes with the uniform prior and 1,365 with the PlantDNA-FM prior);
+2. `finemap` in single-gene mode for *FLC*.
 
 Results go to `results/`. See [examples/README.md](examples/README.md) for the files, the expected results and for recomputing the attention on a GPU.
 
@@ -59,22 +58,21 @@ Results go to `results/`. See [examples/README.md](examples/README.md) for the f
 |---|---|---|
 | reference genome | FASTA with a `.fai` index (plain or bgzipped) | `attention` |
 | genome annotation | GFF3 (`.gz` allowed) | `genes` |
-| genotypes | VCF (bgzipped, with a tabix index) or a PLINK 1 fileset | `assoc`, `finemap` |
-| expression | table of genes × samples (TSV, `.gz` allowed) | `assoc`, `finemap` |
+| genotypes | VCF (bgzipped, with a tabix index) or a PLINK 1 fileset | association tests, `finemap` |
+| expression | table of genes × samples (TSV, `.gz` allowed) | association tests, `finemap` |
 
-The four commands run in this order, each one reading the output of the previous ones:
+The steps run in this order, each one reading the output of the previous ones:
 
 ```bash
 plantdna-finemap genes     --gff genes.gff3.gz --out genes.tsv
-plantdna-finemap assoc     --genotypes genotypes.vcf.gz --expression expression.tsv.gz --genes genes.tsv \
-                           --out associations.tsv.gz --workers 8
+# associations.tsv.gz: one test per gene and variant, from GEMMA as in the paper (or from `plantdna-finemap assoc`), see step 2
 plantdna-finemap attention --model ATLASBIOINFO/PlantDNA-FM --genes genes.tsv --fasta genome.fa \
                            --tests associations.tsv.gz --out attention/
 plantdna-finemap finemap   --tests associations.tsv.gz --expression expression.tsv.gz --genotypes genotypes.vcf.gz \
                            --attention attention/attention.parquet --out results/ --workers 8
 ```
 
-`genes`, `assoc` and `finemap` run on CPUs; `attention` needs a GPU. Without `--attention`, `finemap` reports the uniform prior only, so the three CPU steps already give a standard expGWAS with fine-mapping.
+`genes` and `finemap` run on CPUs; `attention` needs a GPU. Without `--attention`, `finemap` reports the uniform prior only.
 
 Before you start:
 
@@ -107,23 +105,33 @@ plantdna-finemap genes --gff genes.gff3.gz --out genes.tsv
 | `gene_start`, `gene_end` | gene body (1-based, inclusive) |
 | `exons` | exons of the representative transcript (`<gene>.1` or `<gene>_T01`), `start-end,start-end,…`; empty if the gene has no such transcript |
 
-### Step 2: `assoc` — association tests
+### Step 2: association tests
+
+One test per gene and variant: the expression of the gene against each variant in gene body ± 10 kb. There are two ways to get them.
+
+**A. GEMMA, as in the paper.** The paper uses the GEMMA results of Voichek *et al.* for *A. thaliana*: a centred relatedness matrix, and for each gene a mixed-model test of the variants in gene body ± 10 kb with MAF ≥ 0.05 and call rate ≥ 0.5.
+
+```bash
+gemma -bfile genotypes -gk 1 -o kinship                                # once: output/kinship.cXX.txt
+# per gene: put its expression in column 6 of the .fam file and list its variants (gene body +/- 10 kb) in snps.txt
+gemma -bfile genotypes_gene -k output/kinship.cXX.txt -lmm 2 -snps snps.txt -maf 0.05 -miss 0.5 -o AT1G01010
+```
+
+Add a `gene` column to each GEMMA output (`output/AT1G01010.assoc.txt`) and concatenate the files. The GEMMA columns `chr`, `ps` and `p_lrt` are read as they are.
+
+**B. `assoc`, built in.** If you do not want to run GEMMA, `assoc` computes the tests directly from the genotypes and the expression table with the same kind of mixed model ([Method](#method)):
 
 ```bash
 plantdna-finemap assoc --genotypes genotypes.vcf.gz --expression expression.tsv.gz --genes genes.tsv \
     --out associations.tsv.gz --workers 8
 ```
 
-For each gene, the variants in gene body ± 10 kb are tested against the expression of the gene in a linear mixed model that accounts for population structure ([Method](#method)).
-
-**Inputs.**
-
 | option | file |
 |---|---|
 | `--genotypes` | one of: a bgzipped VCF with a tabix index (`bgzip file.vcf; tabix -p vcf file.vcf.gz`; biallelic SNVs with a `GT` field are used); a PLINK 1 fileset, given as the prefix of `.bed`/`.bim`/`.fam` (samples = IID; `.bed` and `.bim` may be gzipped); or a numpy `.npz` with arrays `samples`, `chrom`, `pos` and `dosage` (samples × variants; NaN or negative = missing) |
 | `--expression` | TSV: first column gene ID, then one column per sample |
 | `--genes` | output of step 1 |
-| `--kinship` (optional) | relatedness matrix as a TSV: square, sample IDs in the first column and in the header. By default the matrix is computed from all variants of `--genotypes`. |
+| `--kinship` (optional) | relatedness matrix as a TSV: square, sample IDs in the first column and in the header. By default the matrix is computed from all variants of `--genotypes`, so give a genome-wide file. |
 
 Expression table:
 
@@ -133,21 +141,19 @@ AT2G01060   1.74637   1.67785   1.92481   2.0227
 AT2G01070   1.08573   2.20241   1.02561   1.73898
 ```
 
-**Options.** `--flank` (10000, nt on either side of the gene body), `--maf` (0.05) and `--min-call` (0.5): minimum minor allele frequency and call rate of a variant among the samples with expression of the gene; `--min-samples` (30): genes with expression in fewer samples are skipped; `--kinship-every` (1): use every *n*-th variant for the relatedness matrix, for very large VCFs; `--workers` (4).
+Options: `--flank` (10000, nt on either side of the gene body), `--maf` (0.05) and `--min-call` (0.5): minimum minor allele frequency and call rate of a variant among the samples with expression of the gene; `--min-samples` (30): genes with expression in fewer samples are skipped; `--kinship-every` (1): use every *n*-th variant for the relatedness matrix, for very large VCFs; `--workers` (4).
 
-The relatedness matrix should reflect the whole genome: give `--genotypes` a genome-wide file, or pass your own matrix with `--kinship` (for example one from GEMMA or PLINK, with sample IDs added).
-
-**Output.** `associations.tsv.gz`, one row per variant–gene test:
+**The association table** (`--tests` of steps 3 and 4) is a TSV (`.gz` allowed) or parquet with one row per variant–gene test:
 
 | column | content |
 |---|---|
-| `gene`, `chrom`, `pos` | gene, chromosome and position of the variant |
-| `maf` | minor allele frequency among the samples used for this gene |
-| `logp` | −log₁₀*P* |
-| `h2` | heritability explained by relatedness (REML estimate for the gene) |
-| `n` | number of samples |
+| `gene` | gene ID |
+| `chrom` (or `chr`) | chromosome |
+| `pos` (or `ps`) | position of the variant |
+| `logp`, or `p` / `p_wald` / `p_lrt` / `p_score` | −log₁₀*P*, or the *P* value |
+| `maf` (optional) | minor allele frequency |
 
-**Using another GWAS tool instead.** Steps 3 and 4 take any table (TSV or parquet) with one row per variant–gene test and the columns `gene`, `chrom` (or `chr`), `pos` (or `ps`), and `logp` (−log₁₀*P*) or `p` (also `p_wald`, `p_lrt`, `p_score`). In the paper, the *A. thaliana* tests are the GEMMA results of Voichek *et al.*
+`assoc` writes these columns plus `h2` (REML estimate for the gene) and `n` (samples). Every row counts towards *M*, the number of tests of the Bonferroni threshold.
 
 ### Step 3: `attention` — PlantDNA-FM attention scores (GPU)
 
@@ -180,7 +186,7 @@ plantdna-finemap finemap --tests associations.tsv.gz --expression expression.tsv
 
 Detects eGenes and fine-maps them, once with the uniform prior and once with the PlantDNA-FM prior, so the two can be compared.
 
-**Inputs.** `--tests`, `--expression` and `--genotypes` as in step 2; `--attention`: `attention.parquet` from step 3 (or a TSV with `gene`, `pos`, `attention`). Tested variants that are missing from the genotypes are left out of fine-mapping; tests without an attention score get a neutral weight.
+**Inputs.** `--tests`: the association table of step 2; `--expression` and `--genotypes`: the same files as for the association tests (formats in step 2); `--attention`: `attention.parquet` from step 3 (or a TSV with `gene`, `pos`, `attention`). Tested variants that are missing from the genotypes are left out of fine-mapping; tests without an attention score get a neutral weight.
 
 **Options.**
 
@@ -221,7 +227,7 @@ Only the tests of one gene are used and *M* is its number of variants (Bonferron
 
 ## Method
 
-**Association test.** For each gene, `assoc` tests the variants in gene body ± 10 kb (MAF ≥ 0.05 and call rate ≥ 0.5 among the samples with expression of that gene) in a linear mixed model, *y* = *x*β + *g* + *e* with *g* ~ N(0, σ²*h*²**K**): *h*² is estimated per gene by REML, genotypes and expression are whitened, and each variant gets a *t* test with *n* − 2 degrees of freedom. **K** is the centred relatedness matrix.
+**Association test.** In the paper, the *A. thaliana* tests are the GEMMA results of Voichek *et al.* (mixed model with a relatedness matrix; variants in gene body ± 10 kb with MAF ≥ 0.05 and call rate ≥ 0.5). The built-in `assoc` fits the same kind of model, *y* = *x*β + *g* + *e* with *g* ~ N(0, σ²*h*²**K**): *h*² is estimated per gene by REML, genotypes and expression are whitened, and each variant gets a *t* test with *n* − 2 degrees of freedom. **K** is the centred relatedness matrix.
 
 **Attention score.** For each gene, the region gene body ± 10 kb, extended to cover every tested variant of the gene, is tiled with 16-kb windows at a step of 8 kb. Each window is read in the direction of transcription and run through the model once. The query positions are the exon positions of the gene (all positions if the window contains no exon of the gene, or if the gene has no `<gene>.1` / `<gene>_T01` transcript); attention from these positions is averaged over all layers and heads (36 layers × 12 heads = 432 attention matrices), giving one score per position. The score of a variant is the mean over the windows that contain an exon of the gene, otherwise over the other windows.
 
@@ -262,7 +268,6 @@ Checked against the analysis in the paper:
 | `finemap` | the example (chromosomes 2 and 4) with the paper's settings (`--n-tests 4297315 --lambda 1.35,1.65`) | the paper's results for these chromosomes: 1,314 / 1,365 eGenes and 2,114 / 2,158 expGWAS signals with the uniform / PlantDNA-FM prior, the same credible sets; PIPs within 4 × 10⁻⁵ |
 | `finemap --single-gene` | *FLC* | the same credible sets as the candidate-gene analysis for the paper (7 / 6 variants) |
 | `attention` | 892 genes (248,022 variant–gene pairs, 1,915 windows) recomputed with this code on an RTX 5090; 8 example genes recomputed with the weights downloaded from Hugging Face | largest relative difference to the paper's scores 2.4 × 10⁻⁷ in both checks |
-| `assoc` | the example, against the GEMMA tests of Voichek *et al.* | −log₁₀*P* correlated at *r* = 0.997 with the genome-wide relatedness matrix of the example; VCF and PLINK input give identical tests |
 | installation | clean environment (Python 3.11), `pip install .`, `examples/run_example.sh` | the numbers in [examples/README.md](examples/README.md) |
 
 ## Citation

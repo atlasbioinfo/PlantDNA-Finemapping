@@ -8,8 +8,7 @@
 | `expression_B2.tsv.gz` | expression of the 4,873 genes in the 471 accessions, as used for the tests |
 | `genotypes_B2.bed.gz/.bim.gz/.fam` | PLINK 1 fileset (`.bed` and `.bim` gzipped; read directly) of the 385,382 tested positions that are biallelic SNVs in the 1001 Genomes VCF (A1 = ALT), 471 accessions |
 | `attention_PlantDNA-FM.parquet` | PlantDNA-FM attention score of every test, as used in the paper (same as the `attention` output) |
-| `kinship_B2.tsv.gz` | genome-wide relatedness matrix of the 471 accessions (755,957 SNPs of all five chromosomes); input of `assoc --kinship` |
-| `TAIR10_example.gff3.gz` | TAIR10 / Araport11 annotation (Ensembl Plants) of chromosomes 2 and 4 and of *FLC*; input of `genes` |
+| `TAIR10_example.gff3.gz` | TAIR10 / Araport11 annotation (Ensembl Plants) of chromosomes 2 and 4 and of *FLC*; input of `genes`, needed only to recompute the attention |
 
 ## Run (CPU)
 
@@ -17,7 +16,7 @@
 bash examples/run_example.sh 8
 ```
 
-This runs three analyses (about 5 min with 8 workers on a 32-core server).
+This runs two analyses (about 3 min with 8 workers on a 32-core server).
 
 **1. The analysis of the paper for chromosomes 2 and 4.** The published association tests, the genome-wide number of tests of the paper (*M* = 4,297,315) and the λ of the paper (1.35 for chromosomes 1–3, 1.65 for chromosomes 4–5):
 
@@ -35,26 +34,6 @@ Expected `results/arabidopsis/summary.tsv`, identical to the results of the pape
 | PlantDNA-FM | 1.35 / 1.65 | 4,873 | 4,297,315 | 1,365 | 1,362 | 2,158 | 817 | 924 | 4.26 |
 
 **2. Single-gene mode for *FLC*** (`--single-gene AT5G10140 --lambda 1.65`, Bonferroni over the 242 variants of *FLC*). Expected `results/arabidopsis_FLC/signals.tsv`: one signal with each prior, 7 variants (uniform; lead 3,178,749, PIP 0.70) and 6 variants (PlantDNA-FM; lead 3,178,749, PIP 0.81).
-
-**3. The whole workflow from genotypes and expression**, as for your own data:
-
-```bash
-plantdna-finemap genes --gff examples/arabidopsis/TAIR10_example.gff3.gz --all-biotypes --out results/genes.tsv
-plantdna-finemap assoc --genotypes examples/arabidopsis/genotypes_B2 --expression examples/arabidopsis/expression_B2.tsv.gz \
-    --genes results/genes.tsv --kinship examples/arabidopsis/kinship_B2.tsv.gz --out results/assoc.tsv.gz --workers 8
-plantdna-finemap finemap --tests results/assoc.tsv.gz --expression examples/arabidopsis/expression_B2.tsv.gz \
-    --genotypes examples/arabidopsis/genotypes_B2 --attention examples/arabidopsis/attention_PlantDNA-FM.parquet \
-    --folds 2:4,5 --n-tests 4297315 --lambda 1.35,1.65 --out results/arabidopsis_from_genotypes --workers 8
-```
-
-Here the association tests are computed by `assoc` (15 s; 1,260,663 tests in 4,873 genes) instead of taken from the published GEMMA run. The two sets of tests agree closely (−log₁₀*P* correlated at *r* = 0.997), and so do the results. Expected `results/arabidopsis_from_genotypes/summary.tsv`:
-
-| prior | λ | genes tested | *M* | eGenes | eGenes with signal | expGWAS signals | single-variant signals | variants PIP > 0.9 | mean signal size |
-|---|---|---|---|---|---|---|---|---|---|
-| uniform | – | 4,873 | 4,297,315 | 1,306 | 1,303 | 2,107 | 795 | 915 | 4.63 |
-| PlantDNA-FM | 1.35 / 1.65 | 4,873 | 4,297,315 | 1,355 | 1,354 | 2,143 | 798 | 913 | 4.30 |
-
-1,281 of the 1,314 eGenes of the paper (uniform prior) and 1,333 of the 1,365 (PlantDNA-FM prior) are found again. A VCF (`--genotypes file.vcf.gz`, bgzipped with a tabix index) works in the same way as the PLINK fileset.
 
 On your own data, leave out `--n-tests`, `--lambda` and `--folds`: *M* is then the number of tests in your table and λ is learned by cross-fitting.
 

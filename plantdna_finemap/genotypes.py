@@ -76,6 +76,20 @@ class VCF:
         n = len(self.samples) if cols is None else len(cols)
         return np.array(P, np.int64), (np.stack(X, 1) if X else np.zeros((n, 0), np.float32))
 
+    def chunks(self, cols=None, size=20000):
+        """Yield (chrom, positions, dosages) for all SNVs of the file, `size` variants at a time."""
+        n = len(self.samples) if cols is None else len(cols)
+        for c in self.contigs:
+            P, X = [], []
+            for pos, _, _, d in self.records(c, cols=cols):
+                P.append(pos)
+                X.append(d)
+                if len(P) == size:
+                    yield c, np.array(P, np.int64), np.stack(X, 1)
+                    P, X = [], []
+            if P:
+                yield c, np.array(P, np.int64), np.stack(X, 1)
+
     def sample_index(self, samples):
         ix = {s: i for i, s in enumerate(self.samples)}
         return [ix[s] for s in samples]
@@ -100,6 +114,34 @@ class _Indexed:
         self._ix = {}
         for i, (c, p) in enumerate(zip(chrom, pos)):
             self._ix.setdefault((str(c), int(p)), i)      # first record of a duplicated position
+        first = np.array(sorted(self._ix.values()), int)
+        cc, pp = np.array([str(c) for c in chrom])[first], np.asarray(pos, np.int64)[first]
+        self._by = {}
+        for c in self.contigs:                            # per chromosome: positions in ascending order, record index
+            k = np.where(cc == c)[0]
+            o = np.argsort(pp[k], kind="stable")
+            self._by[c] = (pp[k][o], first[k][o])
+
+    def region(self, chrom, start, end, cols=None):
+        """Positions (int64) and dosages (samples x variants, float32) in [start, end] (1-based, inclusive)."""
+        c = resolve_contig(chrom, self.contigs)
+        n = len(self.samples) if cols is None else len(cols)
+        if c is None:
+            return np.zeros(0, np.int64), np.zeros((n, 0), np.float32)
+        P, I = self._by[c]
+        a, b = np.searchsorted(P, start, "left"), np.searchsorted(P, end, "right")
+        if a == b:
+            return np.zeros(0, np.int64), np.zeros((n, 0), np.float32)
+        X = self._dosage(I[a:b])
+        return P[a:b], (X if cols is None else X[np.asarray(cols, int)])
+
+    def chunks(self, cols=None, size=20000):
+        """Yield (chrom, positions, dosages) for all variants of the file, `size` variants at a time."""
+        for c in self.contigs:
+            P, I = self._by[c]
+            for a in range(0, len(P), size):
+                X = self._dosage(I[a:a + size])
+                yield c, P[a:a + size], (X if cols is None else X[np.asarray(cols, int)])
 
     def sample_index(self, samples):
         ix = {s: i for i, s in enumerate(self.samples)}

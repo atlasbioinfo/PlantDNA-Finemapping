@@ -1,9 +1,9 @@
 """Attention scores -> prior weights.
 
 q    : within-gene rank-based normal quantile of the score (ties get the average rank; missing -> 0, neutral)
-w    : exp(lambda * q), scaled to mean 1 within each gene. The weighted Bonferroni threshold
+w    : exp(lambda * q), scaled to mean 1 within each gene (lambda: see xfit.py). The weighted Bonferroni threshold
        -log10(alpha * w / M) keeps every gene's share of alpha, so the family-wise error rate stays at alpha.
-pi   : SuSiE prior inclusion probabilities 0.8 * w / sum(w) + 0.2 / m within a gene of m variants,
+pi   : SuSiE prior inclusion probabilities 0.8 * w / sum(w) + 0.2 / m over the m variants fitted for a gene,
        so no variant falls below 0.2 / m.
 """
 import numpy as np

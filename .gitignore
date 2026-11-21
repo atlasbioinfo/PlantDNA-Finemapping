@@ -1,7 +1,0 @@
-results/
-__pycache__/
-*.egg-info/
-build/
-.pytest_cache/
-examples/*/*.fa
-examples/*/*.fai

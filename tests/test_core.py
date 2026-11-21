@@ -157,3 +157,67 @@ def test_plink_gzipped(tmp_path):
     P, X = g.fetch("1", [50], ["s0", "s1", "s2", "s3"])
     assert list(P) == [50] and np.array_equal(np.nan_to_num(X[:, 0], nan=-1), [2, -1, 1, 0])
     assert g.alleles("Chr1", [50, 60]) == {50: ("C", "A")}             # REF = A2, ALT = A1
+
+
+def _toy_inputs(tmp_path, rename_samples=False):
+    """Two genes on two chromosomes, 40 samples, PLINK genotypes, expression and tests."""
+    rng = np.random.default_rng(0)
+    n, pos = 40, [100, 200, 300, 400]
+    samples = [f"s{i}" for i in range(n)]
+    code = np.array([3, 2, 0], np.uint8)                       # dosage 0, 1, 2 -> hom A2, het, hom A1
+    rows = []
+    with open(tmp_path / "g.bed", "wb") as f:
+        f.write(bytes([0x6C, 0x1B, 0x01]))
+        for c in ("1", "2"):
+            for p in pos:
+                k = np.zeros(n, np.uint8)
+                k[:] = code[rng.integers(0, 3, n)]
+                k = k.reshape(-1, 4)
+                f.write((k[:, 0] | k[:, 1] << 2 | k[:, 2] << 4 | k[:, 3] << 6).astype(np.uint8).tobytes())
+                rows.append(f"{c}\t{c}_{p}\t0\t{p}\tA\tC\n")
+    (tmp_path / "g.bim").write_text("".join(rows))
+    (tmp_path / "g.fam").write_text("".join(f"{s} {s} 0 0 0 -9\n" for s in samples))
+    T = pd.DataFrame({"gene": np.repeat(["G1", "G2"], 4), "chrom": np.repeat(["1", "2"], 4), "pos": pos * 2, "logp": rng.uniform(0, 3, 8)})
+    T.to_csv(tmp_path / "tests.tsv", sep="\t", index=False)
+    cols = [("x_" + s) if rename_samples else s for s in samples]
+    pd.DataFrame(rng.normal(size=(2, n)), index=pd.Index(["G1", "G2"], name="gene"), columns=cols).to_csv(tmp_path / "expr.tsv", sep="\t")
+    T.assign(attention=rng.uniform(1e-5, 1e-4, 8))[["gene", "pos", "attention"]].to_csv(tmp_path / "attn.tsv", sep="\t", index=False)
+    return str(tmp_path / "tests.tsv"), str(tmp_path / "expr.tsv"), str(tmp_path / "g"), str(tmp_path / "attn.tsv")
+
+
+def test_check_accepts_matching_inputs_and_names_the_mismatch(tmp_path):
+    import pytest
+    from plantdna_finemap.check import Report, check_finemap, check_tests
+    tests, expr, geno, attn = _toy_inputs(tmp_path)
+    out = []
+    R = Report(out.append)
+    check_finemap(R, check_tests(R, tests), expr, geno, attn)
+    assert not R.fails, R.fails
+    (tmp_path / "bad").mkdir()
+    tests, expr, geno, attn = _toy_inputs(tmp_path / "bad", rename_samples=True)
+    R = Report(out.append)
+    check_finemap(R, check_tests(R, tests), expr, geno, attn)
+    assert len(R.fails) == 1 and "Sample IDs" in R.fails[0]
+    with pytest.raises(SystemExit):
+        R.finish()
+    R = Report(out.append)                                      # attention of other genes
+    pd.DataFrame({"gene": ["X"], "pos": [1], "attention": [1e-5]}).to_csv(tmp_path / "other.tsv", sep="\t", index=False)
+    tests, expr, geno, _ = _toy_inputs(tmp_path)
+    check_finemap(R, check_tests(R, tests), expr, geno, str(tmp_path / "other.tsv"))
+    assert any("attention score" in f for f in R.fails)
+    R = Report(out.append)
+    assert check_tests(R, str(tmp_path / "missing.tsv")) is None and "not found" in R.fails[0]
+
+
+def test_compare_passes_on_rounding_and_fails_on_a_different_call(tmp_path):
+    import pytest
+    from plantdna_finemap.check import compare
+    A = pd.DataFrame({"gene": ["G1", "G1"], "rs": ["1_100", "1_200"], "ref": ["A", "C"], "sig_FM": [True, False], "PIP_FM": [0.81234, np.nan]})
+    A.to_csv(tmp_path / "a.csv", index=False)
+    A.assign(PIP_FM=[0.81236, np.nan]).to_csv(tmp_path / "b.csv", index=False)
+    compare(str(tmp_path / "a.csv"), str(tmp_path / "b.csv"), log=lambda s: None)
+    A.assign(sig_FM=[True, True]).to_csv(tmp_path / "c.csv", index=False)
+    with pytest.raises(SystemExit):
+        compare(str(tmp_path / "a.csv"), str(tmp_path / "c.csv"), log=lambda s: None)
+    with pytest.raises(SystemExit):
+        compare(str(tmp_path / "a.csv"), str(tmp_path / "a.csv").replace("a.csv", "b.csv"), tol=1e-6, log=lambda s: None)

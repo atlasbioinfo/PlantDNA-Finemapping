@@ -1,0 +1,10 @@
+# CPU environment: genes, check, finemap and compare. Enough to reproduce the example with the precomputed attention.
+#   conda env create -f environment.yml && conda activate plantdna-finemap
+name: plantdna-finemap
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - .

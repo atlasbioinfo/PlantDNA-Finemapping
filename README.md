@@ -13,14 +13,16 @@ Definitions used throughout:
 ## Contents
 
 - [Installation](#installation)
-- [Quick start: the bundled example](#quick-start-the-bundled-example-cpu-about-3-min)
+- [Quick start: reproduce the example](#quick-start-reproduce-the-example-cpu-about-3-min)
 - [User guide: your own data](#user-guide-your-own-data)
   - [What you need](#what-you-need)
   - [Step 1: `genes`](#step-1-genes--gene-table-from-the-annotation)
   - [Step 2: association tests (GEMMA)](#step-2-association-tests-gemma)
   - [Step 3: `attention`](#step-3-attention--plantdna-fm-attention-scores-gpu)
   - [Step 4: `finemap`](#step-4-finemap--egenes-and-expgwas-signals)
+  - [Check your inputs](#check-your-inputs)
   - [Candidate gene](#candidate-gene-single-gene-mode)
+- [Troubleshooting](#troubleshooting)
 - [Method](#method)
 - [Results in the paper](#results-in-the-paper)
 - [Precomputed attention](#precomputed-attention)
@@ -28,27 +30,51 @@ Definitions used throughout:
 
 ## Installation
 
+There are two environments. Most users need only the first one.
+
+**CPU environment** (`genes`, `check`, `finemap`, `compare`). No GPU and no PyTorch. It is enough to reproduce the example and to analyse your own data when you already have an attention file.
+
 ```bash
 git clone https://github.com/atlasbioinfo/PlantDNA-Finemapping.git
 cd PlantDNA-Finemapping
-pip install .                  # CPU steps: genes, finemap
-pip install ".[attention]"     # also the GPU step (PyTorch, transformers)
+conda env create -f environment.yml        # Python 3.11, numpy, scipy, pandas, pyarrow, pysam
+conda activate plantdna-finemap
 ```
 
-Requires Python ≥ 3.9 and numpy, scipy, pandas, pyarrow and pysam. The attention step was tested with PyTorch 2.10 and transformers 5.9 on an RTX 5090 (about 1.4 s per 16-kb window). The model is downloaded from Hugging Face ([`ATLASBIOINFO/PlantDNA-FM`](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM)) the first time `attention` runs.
+Without conda, `pip install .` in any Python ≥ 3.9 does the same.
 
-## Quick start: the bundled example (CPU, about 3 min)
+**GPU environment** (adds `attention`). Needed only to compute attention scores for a new panel or species. It can be on another machine: compute `attention.parquet` on a GPU server, copy the file, and run `finemap` in the CPU environment.
+
+```bash
+conda env create -f environment-gpu.yml    # the CPU environment plus PyTorch and transformers
+conda activate plantdna-finemap-gpu
+plantdna-finemap check --tests examples/arabidopsis/tests_B2.tsv.gz --gpu     # reports PyTorch, transformers and the GPU
+```
+
+The attention step was tested with PyTorch 2.10 and transformers 5.9 on an RTX 5090; a 16-kb window needs about 12 GB of GPU memory and 1.4 s. The model is downloaded from Hugging Face ([`ATLASBIOINFO/PlantDNA-FM`](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM), 1 GB) the first time `attention` runs. For the *A. thaliana* and maize panels of the paper the attention files are already in this repository ([Precomputed attention](#precomputed-attention)).
+
+## Quick start: reproduce the example (CPU, about 3 min)
+
+In the CPU environment:
 
 ```bash
 bash examples/run_example.sh 8      # 8 worker processes
 ```
 
-The example is *A. thaliana* batch B2 (471 accessions) for the 4,872 tested genes of chromosomes 2 and 4 plus *FLC*. The script runs
+The example is *A. thaliana* batch B2 (471 accessions) for the 4,872 tested genes of chromosomes 2 and 4 plus *FLC*, with the association tests of the paper (the GEMMA results of Voichek *et al.*), the attention scores of the paper, and the settings of the paper. The script
 
-1. `finemap` with the association tests of the paper (the GEMMA results of Voichek *et al.*) and the settings of the paper; the output table `results/arabidopsis/finemapping.csv` is the table of the paper for these two chromosomes (52,683 significant variants; 1,314 eGenes with the uniform prior and 1,365 with the PlantDNA-FM prior);
-2. `finemap` in single-gene mode for *FLC*.
+1. checks the input files;
+2. runs `finemap`, which writes `results/arabidopsis/finemapping.csv` (52,683 significant variants; 1,314 eGenes with the uniform prior and 1,365 with the PlantDNA-FM prior);
+3. compares this table with the table of the paper;
+4. runs `finemap` in single-gene mode for *FLC*.
 
-Results go to `results/`. See [examples/README.md](examples/README.md) for the files, the expected results and for recomputing the attention on a GPU.
+The run is correct if step 3 ends with
+
+```
+  compare: PASS, the result reproduces the expected table
+```
+
+See [examples/README.md](examples/README.md) for the files, the full expected output and for recomputing the attention on a GPU.
 
 ## User guide: your own data
 
@@ -75,7 +101,7 @@ plantdna-finemap finemap   --tests associations.tsv.gz --expression expression.t
 
 The result is one table, `results/finemapping.csv`, with one row per significant variant ([step 4](#step-4-finemap--egenes-and-expgwas-signals)).
 
-`genes` and `finemap` run on CPUs; `attention` needs a GPU. Without `--attention`, `finemap` reports the uniform prior only.
+`genes` and `finemap` run in the CPU environment; `attention` needs the GPU environment. Without `--attention`, `finemap` reports the uniform prior only. `attention` and `finemap` first check their input files and stop with a message if something does not fit ([Check your inputs](#check-your-inputs)).
 
 Before you start:
 
@@ -240,6 +266,52 @@ Variants with a high `PIP_FM` are the candidate causal variants. Without `--atte
 | `tests.tsv.gz` | every test, significant or not: `logp`, `attention`, `fold`, prior `weight`, threshold and significance with each prior |
 | `lambda.tsv`, `lambda_curve.tsv` | λ of each fold; number of eGenes in each fold for every λ of the grid (cross-fitting only) |
 
+### Check your inputs
+
+A wrong input file usually does not crash the analysis; it gives an empty or a wrong result. `attention` and `finemap` therefore check the inputs before they start, and `check` runs the same checks alone, in a few seconds:
+
+```bash
+plantdna-finemap check --tests associations.tsv.gz --expression expression.tsv.gz --genotypes genotypes.vcf.gz \
+    --attention attention/attention.parquet --genes genes.tsv --fasta genome.fa
+```
+
+Give the files you have; `--gpu` also checks the environment of the attention step. Each check prints one line:
+
+```
+  OK    association tests: 1,307,160 tests, 4,873 genes (median 243 variants per gene), chromosomes 2, 4, 5
+  OK    genes of the association tests with expression: 100.0%
+  OK    samples with expression and genotypes (471 of 471): 100.0%
+  OK    tested variants found in the genotypes (20 genes): 94.8%
+  OK    tests with an attention score: 100.0%
+  OK    genes of the association tests in the gene table: 100.0%
+  OK    tested variants within 100 kb of their gene: 100.0%
+  OK    REF alleles of the tests that match the FASTA (2,000 variants): 100.0%
+  check: all checks passed
+```
+
+`FAIL` stops the run: the files do not fit together. `WARN` lets it continue, but look at the line. What is checked:
+
+| check | what a failure means |
+|---|---|
+| files and indexes exist (VCF `.tbi`, FASTA `.fai`, complete PLINK fileset) | a path is wrong or an index is missing; the message gives the command to make it |
+| association table has `gene`, `chrom`, `pos` and `logp` or `p`; −log₁₀*P* is finite and not negative | wrong column names, or *P* values in a column named `logp` |
+| genes of the tests have expression | gene IDs differ between the files, or the expression table is transposed |
+| samples are shared by expression and genotypes | sample IDs differ between the files |
+| chromosomes of the tests are in the genotypes; tested variants are found there | chromosome names or the assembly differ |
+| tests have an attention score | the attention file was computed for other tests, gene IDs or another assembly |
+| genes of the tests are in the gene table; variants lie near their gene | another annotation version or another assembly |
+| chromosomes of the tests are in the FASTA; REF alleles match the FASTA (if the tests have a `ref` column) | the FASTA is not the assembly on which the variants were called |
+| at least two chromosomes for cross-fitting | give a fixed `--lambda` for a single chromosome |
+
+To compare two result tables, for example your rerun of the example with the table of the paper:
+
+```bash
+plantdna-finemap compare --result results/arabidopsis/finemapping.csv \
+    --expected examples/expected/arabidopsis_chr2_chr4_finemapping_paper.csv.gz
+```
+
+The variants, the alleles and all calls must be identical; numbers may differ by 0.001 (`--tolerance`).
+
 ### Candidate gene (single-gene mode)
 
 ```bash
@@ -248,6 +320,20 @@ plantdna-finemap finemap --tests associations.tsv.gz --expression expression.tsv
 ```
 
 Only the tests of one gene are used and *M* is its number of variants (Bonferroni over the gene's own variants). λ must be given, for example the cross-fitted λ of the gene's chromosome from a genome-wide run. `--susie-all` fine-maps all tested variants of the gene instead of only the significant ones. The outputs are the same files as above.
+
+## Troubleshooting
+
+| message or symptom | cause and fix |
+|---|---|
+| `plantdna-finemap: command not found` | the environment is not active: `conda activate plantdna-finemap` |
+| `FAIL  samples with expression and genotypes: 0 of …` | sample IDs differ between the two files (the message shows three of each); rename the columns of the expression table or the samples of the VCF (`bcftools reheader -s`) |
+| `FAIL  genes of the association tests with expression: 0.0%` | gene IDs differ, or the expression table has samples in rows: it must have genes in rows |
+| `FAIL  genotypes: the index … .tbi is missing` | `bgzip file.vcf && tabix -p vcf file.vcf.gz`; a VCF compressed with plain `gzip` cannot be indexed |
+| `FAIL  tests with an attention score: 0.0%` | the attention file belongs to other data; rerun `attention` with this association table, or use the precomputed file of the same panel |
+| `FAIL  REF alleles of the tests that match the FASTA` | the FASTA is another assembly (or version) than the one of the variants |
+| `finemapping.csv` has few rows or `PIP_FM` is empty | few variants pass the Bonferroni threshold; look at `summary.tsv`. `PIP_FM` is empty for variants that are significant only with the uniform prior |
+| `attention` runs out of GPU memory | a 16-kb window needs about 12 GB; use a larger GPU, or `--device cpu` for a few genes |
+| cross-fitted λ is 0 | the attention prior did not increase eGenes on the other fold of your data; the result then equals the uniform prior |
 
 ## Method
 
@@ -292,7 +378,7 @@ Checked against the analysis in the paper:
 | `finemap` | the example (chromosomes 2 and 4) with the paper's settings (`--n-tests 4297315 --lambda 1.35,1.65`) | `finemapping.csv` has the same 52,683 variants as the table of the paper for these chromosomes, with identical weights, thresholds, significance and eGene calls (1,314 / 1,365 eGenes, 2,114 / 2,158 expGWAS signals with the uniform / PlantDNA-FM prior); PIPs within 4 × 10⁻⁵ |
 | `finemap --single-gene` | *FLC* | the same credible sets as the candidate-gene analysis for the paper (7 / 6 variants) |
 | `attention` | all 4,873 example genes (1,307,160 variant–gene pairs, 10,544 windows) recomputed with this code and the weights downloaded from Hugging Face, on an RTX 5090 (3 h 58 min) | largest relative difference to the paper's scores 2.6 × 10⁻⁷ |
-| installation | clean environment (Python 3.11), `pip install .`, `examples/run_example.sh` | the numbers in [examples/README.md](examples/README.md) |
+| installation | new conda environment from `environment.yml`, `examples/run_example.sh` | all input checks pass and `compare` reports PASS against the table of the paper |
 
 ## Citation
 

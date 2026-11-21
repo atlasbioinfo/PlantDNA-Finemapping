@@ -103,8 +103,17 @@ def aggregate(W):
     return S[["gene", "pos", "attention", "attention_source"]]
 
 
-def run(model, genes, fasta, tests, out, window=16000, step=8000, flank=10000, only=None, device="cuda", log=print):
+def run(model, genes, fasta, tests, out, window=16000, step=8000, flank=10000, only=None, device="cuda", log=print, check=True):
     from .finemap import read_tests
+    if check:                                              # stop before loading the model if the inputs do not fit together
+        from .check import Report, check_attention_inputs, check_gpu, check_tests
+        log("attention: checking the input files")
+        R = Report(log)
+        check_gpu(R)
+        Tc = check_tests(R, tests)
+        if Tc is not None:
+            check_attention_inputs(R, Tc, genes, fasta)
+        R.finish("attention inputs")
     G = read_genes(genes).drop_duplicates("gene").set_index("gene")
     T = read_tests(tests, logp=False)
     T = T[T.gene.isin(G.index)]

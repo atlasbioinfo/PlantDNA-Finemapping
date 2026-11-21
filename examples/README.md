@@ -16,7 +16,13 @@
 bash examples/run_example.sh 8
 ```
 
-This runs two analyses (about 3 min with 8 workers on a 32-core server).
+No GPU is needed: the script uses the CPU environment and the attention scores shipped here. It checks the input files, runs two analyses (about 3 min with 8 workers on a 32-core server) and compares the result with the table of the paper (`examples/expected/arabidopsis_chr2_chr4_finemapping_paper.csv.gz`). The run is correct if the log contains
+
+```
+  check: all checks passed
+  compare: PASS, the result reproduces the expected table
+```
+
 
 **1. The analysis of the paper for chromosomes 2 and 4.** The published association tests, the genome-wide number of tests of the paper (*M* = 4,297,315) and the λ of the paper (1.35 for chromosomes 1–3, 1.65 for chromosomes 4–5):
 

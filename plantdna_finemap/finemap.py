@@ -170,8 +170,16 @@ def _lambdas(T, lam, folds, M, alpha, out, log):
 
 
 def run(tests, expression, genotypes, out, attention=None, lam=None, folds=None, alpha=0.05, n_tests=None, L=10,
-        single_gene=None, susie_all=False, workers=4, log=print, genes=None):
+        single_gene=None, susie_all=False, workers=4, log=print, genes=None, check=True):
     t0 = time.time()
+    if check:                                              # stop before any computation if the inputs do not fit together
+        from .check import Report, check_finemap, check_tests
+        log("finemap: checking the input files")
+        R = Report(log)
+        Tc = check_tests(R, tests)
+        if Tc is not None:
+            check_finemap(R, Tc, expression, genotypes, attention, genes, single_gene, lam, folds)
+        R.finish("finemap inputs")
     os.makedirs(out, exist_ok=True)
     T = read_tests(tests)
     if single_gene:

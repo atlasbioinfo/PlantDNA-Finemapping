@@ -6,6 +6,7 @@ positions of the attention readout. Genes without such a transcript get no exons
 uses all positions as queries (as in the paper).
 """
 import gzip
+from urllib.parse import unquote
 import pandas as pd
 
 
@@ -14,7 +15,7 @@ def _open(path):
 
 
 def _attrs(s):
-    return dict(x.split("=", 1) for x in s.split(";") if "=" in x)
+    return {k: unquote(v) for k, v in (x.split("=", 1) for x in s.split(";") if "=" in x)}
 
 
 def _strip(x):
@@ -36,13 +37,13 @@ def read_gff(path, biotype="protein_coding"):
             if p[2] == "gene":
                 if biotype and a.get("biotype", biotype) != biotype:
                     continue
-                genes.append((_strip(a["ID"]), p[0], p[6], int(p[3]), int(p[4])))
+                genes.append((_strip(a["ID"]), p[0], p[6], int(p[3]), int(p[4]), a.get("Name", "")))
             elif p[2] in ("mRNA", "transcript") and "ID" in a and "Parent" in a:
                 tx[_strip(a["ID"])] = _strip(a["Parent"].split(",")[0])
             elif p[2] == "exon" and "Parent" in a:
                 for t in a["Parent"].split(","):
                     ex.setdefault(_strip(t), []).append((int(p[3]), int(p[4])))
-    G = pd.DataFrame(genes, columns=["gene", "chrom", "strand", "gene_start", "gene_end"]).drop_duplicates("gene")
+    G = pd.DataFrame(genes, columns=["gene", "chrom", "strand", "gene_start", "gene_end", "gene_name"]).drop_duplicates("gene")
     by_gene = {}
     for t, g in tx.items():
         if t in ex:
@@ -59,7 +60,7 @@ def read_gff(path, biotype="protein_coding"):
 
 
 def make_genes(gff, biotype="protein_coding", chroms=None):
-    """Gene table: gene chrom strand gene_start gene_end exons ("start-end,..." genomic, 1-based)."""
+    """Gene table: gene chrom strand gene_start gene_end gene_name exons ("start-end,..." genomic, 1-based)."""
     G, exons = read_gff(gff, biotype)
     if chroms:
         G = G[G.chrom.isin(chroms)]

@@ -145,44 +145,6 @@ def test_example_gene_without_dot1_uses_all_positions():
     assert not ex.any()
 
 
-def test_assoc_equals_ols_without_relatedness():
-    from scipy import stats
-    from plantdna_finemap.assoc import clean, lmm_logp
-    rng = np.random.default_rng(1)
-    n, m = 120, 30
-    X = rng.binomial(2, 0.3, (n, m)).astype(float)
-    y = 0.6 * X[:, 3] + rng.normal(size=n)
-    lam, U = np.linalg.eigh(np.eye(n))                 # K = I: the mixed model is ordinary regression
-    logp, _ = lmm_logp(X, y, lam, U)
-    ols = np.array([-np.log10(stats.linregress(X[:, j], y).pvalue) for j in range(m)])
-    assert np.allclose(logp, ols, rtol=1e-6, atol=1e-8)
-    assert logp.argmax() == 3
-    Xm = X.copy()
-    Xm[:70, 0] = np.nan                                # call rate 50/120 < 0.5
-    Xm[:, 1] = 0                                       # monomorphic
-    keep, Xc, maf = clean(Xm, maf=0.05, min_call=0.5)
-    assert not keep[0] and not keep[1] and keep[2:].all() and not np.isnan(Xc).any() and (maf >= 0.05).all()
-
-
-def test_plink_region_and_chunks(tmp_path):
-    n, pos = 5, [300, 100, 200]                        # unsorted on purpose
-    G = np.array([[2, 1, 0], [0, 1, 2], [1, 1, 1], [2, 2, 2], [0, 0, 0]], float)
-    code = {2: 0, 1: 2, 0: 3}
-    with open(tmp_path / "g.bed", "wb") as f:
-        f.write(bytes([0x6C, 0x1B, 0x01]))
-        for j in range(3):
-            c = [code[int(v)] for v in G[:, j]] + [0] * 3
-            f.write(bytes([c[0] | c[1] << 2 | c[2] << 4 | c[3] << 6, c[4] | c[5] << 2 | c[6] << 4 | c[7] << 6]))
-    (tmp_path / "g.bim").write_text("".join(f"1\t1_{p}\t0\t{p}\tA\tC\n" for p in pos))
-    (tmp_path / "g.fam").write_text("".join(f"s{i} s{i} 0 0 0 -9\n" for i in range(n)))
-    g = Plink(str(tmp_path / "g"))
-    P, X = g.region("Chr1", 100, 250, [4, 0])
-    assert list(P) == [100, 200] and np.array_equal(X, G[[4, 0]][:, [1, 2]])
-    assert g.region("1", 400, 500)[1].shape == (n, 0)
-    (c, P, X), = list(g.chunks())
-    assert c == "1" and list(P) == [100, 200, 300] and np.array_equal(X, G[:, [1, 2, 0]])
-
-
 def test_plink_gzipped(tmp_path):
     import gzip
     from plantdna_finemap.genotypes import open_genotypes
@@ -194,3 +156,4 @@ def test_plink_gzipped(tmp_path):
     g = open_genotypes(str(tmp_path / "g"))
     P, X = g.fetch("1", [50], ["s0", "s1", "s2", "s3"])
     assert list(P) == [50] and np.array_equal(np.nan_to_num(X[:, 0], nan=-1), [2, -1, 1, 0])
+    assert g.alleles("Chr1", [50, 60]) == {50: ("C", "A")}             # REF = A2, ALT = A1

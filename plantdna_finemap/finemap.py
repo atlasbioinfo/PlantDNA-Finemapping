@@ -51,7 +51,7 @@ def read_tests(path, logp=True):
     T = T.dropna(subset=["logp"]).drop_duplicates(["gene", "pos"]).reset_index(drop=True)
     if len(T) < n0:
         print(f"tests: {n0 - len(T)} rows without P or duplicated (gene, pos) dropped", flush=True)
-    keep = ["gene", "chrom", "pos", "logp"] + [c for c in ("maf", "af") if c in T.columns]
+    keep = ["gene", "chrom", "pos", "logp"] + [c for c in ("maf", "af", "ref", "alt") if c in T.columns]
     return T[keep]
 
 
@@ -105,6 +105,44 @@ def _signals(P, T):
     return pd.DataFrame(rows, columns=cols)
 
 
+def result_table(T, P, egenes, geno, genes=None, prior=None):
+    """One row per variant that is significant with the uniform prior or with the attention prior (the table of the paper)."""
+    sig = T.sig_uniform if prior is None else (T.sig_uniform | T[f"sig_{prior}"])
+    F = T[sig].copy()
+    F["n_tested_in_gene"] = T.groupby("gene").pos.transform("size")[sig]
+    F["rs"] = F.chrom.astype(str) + "_" + F.pos.astype(str)
+    al = {}
+    if "ref" not in F.columns or "alt" not in F.columns:
+        for c, d in F.groupby("chrom", sort=False):
+            al.update({(c, p): a for p, a in geno.alleles(c, d.pos.unique()).items()})
+    if "ref" not in F.columns or "alt" not in F.columns:      # alleles from the association table if given, else from the genotypes
+        F["ref"] = [al.get((c, p), ("", ""))[0] for c, p in zip(F.chrom, F.pos)]
+        F["alt"] = [al.get((c, p), ("", ""))[1] for c, p in zip(F.chrom, F.pos)]
+    if "maf" not in F.columns:                                # GEMMA writes the allele frequency (af)
+        F["maf"] = np.minimum(F.af, 1 - F.af).round(3) if "af" in F.columns else np.nan
+    pip = lambda name: P[P.prior == name].drop_duplicates(["gene", "pos"]).set_index(["gene", "pos"]).pip.astype(float)
+    key = pd.MultiIndex.from_arrays([F.gene, F.pos])
+    F["sig_raw"], F["eGene_raw"] = F.sig_uniform, F.gene.isin(egenes["uniform"])
+    F["PIP_raw"] = pip("uniform").reindex(key).round(5).values
+    F["raw_pval (-log10)"] = F.logp.round(4)
+    cols = ["gene", "rs", "ref", "alt", "maf", "raw_pval (-log10)", "n_tested_in_gene"]
+    if prior is not None:
+        F["FM_prior_weight"], F["threshold_FM (-log10)"] = F.weight.round(4), F[f"threshold_{prior}"].round(4)
+        F["sig_FM"], F["eGene_FM"] = F[f"sig_{prior}"], F.gene.isin(egenes[prior])
+        F["FM_new_sig"] = F.sig_FM & ~F.sig_raw
+        F["PIP_FM"] = pip(prior).reindex(key).round(5).values
+        cols += ["FM_prior_weight", "threshold_FM (-log10)", "sig_raw", "eGene_raw", "sig_FM", "eGene_FM", "FM_new_sig", "PIP_raw", "PIP_FM"]
+    else:
+        cols += ["sig_raw", "eGene_raw", "PIP_raw"]
+    if genes is not None:
+        G = pd.read_csv(genes, sep="\t", dtype=str, keep_default_na=False).drop_duplicates("gene").set_index("gene")
+        for c in ("gene_name", "strand", "gene_start", "gene_end"):
+            F[c] = F.gene.map(G[c]) if c in G.columns else ""
+        F.loc[F.gene_name == F.gene, "gene_name"] = ""          # no name in the annotation
+        cols = ["gene", "gene_name", "strand", "gene_start", "gene_end"] + cols[1:]
+    return F.sort_values(["gene", "rs"])[cols].reset_index(drop=True)
+
+
 def _lambdas(T, lam, folds, M, alpha, out, log):
     """Weights of the attention prior: fixed lambda (one value, or one per fold) or two-fold cross-fitting."""
     if lam is not None and len(lam) == 1:
@@ -132,7 +170,7 @@ def _lambdas(T, lam, folds, M, alpha, out, log):
 
 
 def run(tests, expression, genotypes, out, attention=None, lam=None, folds=None, alpha=0.05, n_tests=None, L=10,
-        single_gene=None, susie_all=False, workers=4, log=print):
+        single_gene=None, susie_all=False, workers=4, log=print, genes=None):
     t0 = time.time()
     os.makedirs(out, exist_ok=True)
     T = read_tests(tests)
@@ -155,12 +193,12 @@ def run(tests, expression, genotypes, out, attention=None, lam=None, folds=None,
         T["q"] = rank_q(T.attention.values, T.gene.values)
         w, lams = _lambdas(T, lam, folds, M, alpha, out, log)
         priors[PRIOR] = w
-        T["weight"] = w.astype(np.float32)
+        T["weight"] = w
         pd.DataFrame({"fold": list(lams), "lambda": list(lams.values())}).to_csv(f"{out}/lambda.tsv", sep="\t", index=False)
     egenes, fits = {}, {}
     for name, w in priors.items():
         thr = thresholds(w, M, alpha)
-        T[f"threshold_{name}"] = thr.astype(np.float32)
+        T[f"threshold_{name}"] = thr
         sig = T.logp.values > thr
         T[f"sig_{name}"] = sig
         egenes[name] = set(T.gene[sig])
@@ -205,6 +243,9 @@ def run(tests, expression, genotypes, out, attention=None, lam=None, folds=None,
     P.to_csv(f"{out}/pip.tsv.gz", sep="\t", index=False, float_format="%.6g")
     Q.to_csv(f"{out}/signals.tsv", sep="\t", index=False)
     Sm.to_csv(f"{out}/summary.tsv", sep="\t", index=False)
+    F = result_table(T, P, egenes, geno, genes, PRIOR if attention is not None else None)
+    F.to_csv(f"{out}/finemapping.csv", index=False)
+    log(f"finemap: finemapping.csv: {len(F):,} significant variants in {F.gene.nunique():,} eGenes")
     log("\n" + Sm.to_string(index=False))
     log(f"finemap: done in {time.time() - t0:.0f} s -> {out}")
     return Sm

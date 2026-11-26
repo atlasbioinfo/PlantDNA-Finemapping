@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "plantdna-finemap"
+version = "0.5.0"
+description = "expGWAS fine-mapping in plant populations with PlantDNA-FM attention priors"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.23", "scipy>=1.9", "pandas>=1.5", "pyarrow", "pysam>=0.21"]
+
+[project.optional-dependencies]
+attention = ["torch>=2.1", "transformers>=4.56"]
+
+[project.scripts]
+plantdna-finemap = "plantdna_finemap.cli:main"
+
+[tool.setuptools]
+packages = ["plantdna_finemap"]

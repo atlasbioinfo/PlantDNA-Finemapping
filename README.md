@@ -2,13 +2,13 @@
 
 expGWAS fine-mapping in plant populations with PlantDNA-FM attention priors: weighted Bonferroni eGene detection and SuSiE fine-mapping.
 
-Association panels in plants are small and highly structured, so an expression GWAS (expGWAS) signal usually points to a block of variants in near-perfect linkage disequilibrium rather than to one variant. This code uses attention from [PlantDNA-FM](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM), a plant DNA foundation model with a 16-kb context at single-nucleotide resolution, pre-trained with masked nucleotide modelling on 260 plant species, as a prior that ranks the variants within each gene, and applies the same prior to eGene detection and to fine-mapping.
+Association panels in plants are small and highly structured, so an expression GWAS (expGWAS) association usually points to a block of variants in near-perfect linkage disequilibrium rather than to one variant. This code uses attention from [PlantDNA-FM](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM), a plant DNA foundation model with a 16-kb context at single-nucleotide resolution, pre-trained with masked nucleotide modelling on 260 plant species, as a prior that ranks the variants within each gene, and applies the same prior to eGene detection and to fine-mapping.
 
 Definitions used throughout:
 
 - **expGWAS**: association of the expression of each gene with the variants in and around it (gene body ± 10 kb).
 - **eGene**: a gene with at least one significant variant.
-- **expGWAS signal**: a 95% credible set from SuSiE fine-mapping of an eGene. A gene can have several signals.
+- **credible set**: a 95% credible set (purity ≥ 0.5) from SuSiE fine-mapping of an eGene. A gene can have several.
 - **single-variant signal**: a credible set with one variant.
 
 ## Contents
@@ -20,7 +20,7 @@ Definitions used throughout:
   - [Step 1: `genes`](#step-1-genes--gene-table-from-the-annotation)
   - [Step 2: association tests (GEMMA)](#step-2-association-tests-gemma)
   - [Step 3: `attention`](#step-3-attention--plantdna-fm-attention-scores-gpu)
-  - [Step 4: `finemap`](#step-4-finemap--egenes-and-expgwas-signals)
+  - [Step 4: `finemap`](#step-4-finemap--egenes-and-fine-mapped-variants)
   - [Check your inputs](#check-your-inputs)
   - [Candidate gene](#candidate-gene-single-gene-mode)
 - [Troubleshooting](#troubleshooting)
@@ -100,7 +100,7 @@ plantdna-finemap finemap   --tests associations.tsv.gz --expression expression.t
                            --attention attention/attention.parquet --genes genes.tsv --out results/ --workers 8
 ```
 
-The result is one table, `results/finemapping.csv`, with one row per significant variant ([step 4](#step-4-finemap--egenes-and-expgwas-signals)).
+The result is one table, `results/finemapping.csv`, with one row per significant variant ([step 4](#step-4-finemap--egenes-and-fine-mapped-variants)).
 
 `genes` and `finemap` run in the CPU environment; `attention` needs the GPU environment. Without `--attention`, `finemap` reports the uniform prior only. `attention` and `finemap` first check their input files and stop with a message if something does not fit ([Check your inputs](#check-your-inputs)).
 
@@ -188,7 +188,7 @@ plantdna-finemap attention --model ATLASBIOINFO/PlantDNA-FM --genes genes.tsv --
 
 For the *A. thaliana* and maize panels of the paper, the scores are already in this repository ([Precomputed attention](#precomputed-attention)).
 
-### Step 4: `finemap` — eGenes and expGWAS signals
+### Step 4: `finemap` — eGenes and fine-mapped variants
 
 ```bash
 plantdna-finemap finemap --tests associations.tsv.gz --expression expression.tsv.gz --genotypes genotypes.vcf.gz \
@@ -260,9 +260,9 @@ Variants with a high `PIP_FM` are the candidate causal variants. Without `--atte
 
 | file | content |
 |---|---|
-| `summary.tsv` | one row per prior: λ, genes tested, tests, *M*, eGenes, eGenes with a signal, expGWAS signals, single-variant signals, variants with PIP > 0.9, mean signal size (variants per credible set) |
-| `signals.tsv` | one row per expGWAS signal (95% credible set): `gene`, `prior`, `n_variants`, `purity`, lead variant (`lead_pos`, `lead_pip`, `lead_logp`) and all variant positions |
-| `genes.tsv` | one row per tested gene: number of tests, lead variant, eGene status and number of signals with each prior |
+| `summary.tsv` | one row per prior: λ, genes tested, tests, *M*, eGenes, eGenes with a credible set, single-variant signals, variants with PIP > 0.9, mean signal size (variants per credible set) |
+| `signals.tsv` | one row per 95% credible set: `gene`, `prior`, `n_variants`, `purity`, lead variant (`lead_pos`, `lead_pip`, `lead_logp`) and all variant positions |
+| `genes.tsv` | one row per tested gene: number of tests, lead variant, eGene status and number of credible sets with each prior |
 | `pip.tsv.gz` | every fine-mapped variant and prior: `pip`, `cs` (credible set of the gene, −1 = none), `purity`, `n_samples`, `converged` |
 | `tests.tsv.gz` | every test, significant or not: `logp`, `attention`, `fold`, prior `weight`, threshold and significance with each prior |
 | `lambda.tsv`, `lambda_curve.tsv` | λ of each fold; number of eGenes in each fold for every λ of the grid (cross-fitting only) |
@@ -348,7 +348,7 @@ Only the tests of one gene are used and *M* is its number of variants (Bonferron
 
 **eGene detection.** Uniform prior: −log₁₀*P* > −log₁₀(α/*M*). Attention prior: −log₁₀*P* > −log₁₀(α*w*/*M*), the weighted Bonferroni procedure, with *M* the number of tests (all variant–gene pairs) and α = 0.05. Because the weights average to 1 within each gene, the family-wise error rate stays at α.
 
-**Fine-mapping.** For each eGene, SuSiE (*L* = 10) runs on its significant variants, with mean-imputed genotypes and the expression values as given. The prior inclusion probabilities are π = 0.8*w*/Σ*w* + 0.2/*m* over these *m* variants (uniform prior: 1/*m*). Signals are 95% credible sets with purity ≥ 0.5. SuSiE is a numpy port of `susieR::susie` with its defaults.
+**Fine-mapping.** For each eGene, SuSiE (*L* = 10) runs on its significant variants, with mean-imputed genotypes and the expression values as given. The prior inclusion probabilities are π = 0.8*w*/Σ*w* + 0.2/*m* over these *m* variants (uniform prior: 1/*m*). Credible sets are 95% with purity ≥ 0.5. SuSiE is a numpy port of `susieR::susie` with its defaults.
 
 ## Results in the paper
 
@@ -358,10 +358,8 @@ Full cohorts, uniform prior versus PlantDNA-FM prior (λ cross-fitted over chrom
 |---|---|---|---|
 | *A. thaliana*, batch B2, 471 accessions: eGenes | 4,283 | 4,479 | 1.35 / 1.65 (chromosomes 1–3 / 4–5) |
 | *A. thaliana*: single-variant signals | 2,560 | 2,703 | |
-| *A. thaliana*: expGWAS signals (95% credible sets) | 6,810 | 7,009 | |
 | maize, 263 lines: eGenes | 8,557 | 8,758 | 1.25 / 1.85 (chromosomes 1–5 / 6–10) |
 | maize: single-variant signals | 3,726 | 3,980 | |
-| maize: expGWAS signals (95% credible sets) | 14,424 | 14,824 | |
 
 - **Benchmark against other priors.** Gain in cross-validated log marginal likelihood over the uniform prior: PlantDNA-FM +3,857 ± 86 (*A. thaliana*) and +4,834 ± 99 (maize), the highest of ten attention-based DNA language models (next best: Nucleotide Transformer v3, +2,822 ± 85, and Nucleotide Transformer v2, +4,141 ± 86) and above PhyloP / PhastCons conservation (+368 / +355 and +803 / +796). Attention from a randomly initialised PlantDNA-FM gives no gain, and zero-shot ISM scores did not substantially improve on the uniform prior.
 - **Down-sampling.** With 100 accessions, the prior detected 14.0% more eGenes in *A. thaliana* and 8.1% more in maize, and 25.9% / 18.3% more single-variant credible sets; 97.6–99.9% of the eGenes found with the prior in subsets were eGenes in the full cohort. The gain corresponds to 7–13% more accessions with the uniform prior.
@@ -385,7 +383,7 @@ Checked against the analysis in the paper:
 
 | step | check | result |
 |---|---|---|
-| `finemap` | the example (chromosomes 2 and 4) with the paper's settings (`--n-tests 4297315 --lambda 1.35,1.65`) | `finemapping.csv` has the same 52,683 variants as the table of the paper for these chromosomes, with identical weights, thresholds, significance and eGene calls (1,314 / 1,365 eGenes, 2,114 / 2,158 expGWAS signals with the uniform / PlantDNA-FM prior); PIPs within 4 × 10⁻⁵ |
+| `finemap` | the example (chromosomes 2 and 4) with the paper's settings (`--n-tests 4297315 --lambda 1.35,1.65`) | `finemapping.csv` has the same 52,683 variants as the table of the paper for these chromosomes, with identical weights, thresholds, significance and eGene calls (1,314 / 1,365 eGenes with the uniform / PlantDNA-FM prior); PIPs within 4 × 10⁻⁵ |
 | `finemap --single-gene` | *FLC* | the same credible sets as the candidate-gene analysis for the paper (7 / 6 variants) |
 | `attention` | all 4,873 example genes (1,307,160 variant–gene pairs, 10,544 windows) recomputed with this code and the weights downloaded from Hugging Face, on an RTX 5090 (3 h 58 min) | largest relative difference to the paper's scores 2.6 × 10⁻⁷ |
 | installation | new conda environment from `environment.yml`, `examples/run_example.sh` | all input checks pass and `compare` reports PASS against the table of the paper |

@@ -42,12 +42,12 @@ AT2G01090,,+,79779,81710,2_80921,T,C,0.136,12.6677,275,5.5189,7.1924,True,True,T
 
 `results/arabidopsis/summary.tsv` gives the counts, identical to the results of the paper for these two chromosomes:
 
-| prior | λ | genes tested | *M* | eGenes | eGenes with signal | expGWAS signals | single-variant signals | variants PIP > 0.9 | mean signal size |
-|---|---|---|---|---|---|---|---|---|---|
-| uniform | – | 4,873 | 4,297,315 | 1,314 | 1,307 | 2,114 | 797 | 904 | 4.65 |
-| PlantDNA-FM | 1.35 / 1.65 | 4,873 | 4,297,315 | 1,365 | 1,362 | 2,158 | 817 | 924 | 4.26 |
+| prior | λ | genes tested | *M* | eGenes | eGenes with credible set | single-variant signals | variants PIP > 0.9 | mean signal size |
+|---|---|---|---|---|---|---|---|---|
+| uniform | – | 4,873 | 4,297,315 | 1,314 | 1,307 | 797 | 904 | 4.65 |
+| PlantDNA-FM | 1.35 / 1.65 | 4,873 | 4,297,315 | 1,365 | 1,362 | 817 | 924 | 4.26 |
 
-**2. Single-gene mode for *FLC*** (`--single-gene AT5G10140 --lambda 1.65`, Bonferroni over the 242 variants of *FLC*). Expected: `results/arabidopsis_FLC/finemapping.csv` lists the significant variants of *FLC*, and `signals.tsv` has one signal with each prior, 7 variants (uniform; lead 3,178,749, PIP 0.70) and 6 variants (PlantDNA-FM; lead 3,178,749, PIP 0.81).
+**2. Single-gene mode for *FLC*** (`--single-gene AT5G10140 --lambda 1.65`, Bonferroni over the 242 variants of *FLC*). Expected: `results/arabidopsis_FLC/finemapping.csv` lists the significant variants of *FLC*, and `signals.tsv` has one credible set with each prior, 7 variants (uniform; lead 3,178,749, PIP 0.70) and 6 variants (PlantDNA-FM; lead 3,178,749, PIP 0.81).
 
 On your own data, leave out `--n-tests`, `--lambda` and `--folds`: *M* is then the number of tests in your table and λ is learned by cross-fitting.
 

@@ -9,7 +9,7 @@ gene on the variants in gene body +/- 10 kb, as in Voichek et al.; every row cou
    mean 1 within each gene, the family-wise error rate stays at alpha. An eGene has >= 1 significant variant.
 3. Fine-mapping. SuSiE (L effects) on the significant variants of each eGene (mean-imputed genotypes,
    expression as is), prior inclusion probabilities pi = 0.8 * w / sum(w) + 0.2 / m over these m variants
-   (uniform prior: 1 / m). An expGWAS signal is a 95% credible set with purity >= 0.5.
+   (uniform prior: 1 / m). Credible sets: 95%, purity >= 0.5; a single-variant signal is a credible set of one variant.
 Single-gene mode (candidate-gene analysis): only the tests of one gene, M = its number of tests, fixed lambda.
 """
 import os
@@ -92,7 +92,7 @@ def _finemap(job):
 
 
 def _signals(P, T):
-    """One row per expGWAS signal (95% credible set)."""
+    """One row per 95% credible set."""
     rows = []
     lp = T.set_index(["gene", "pos"]).logp
     for (g, prior, c), d in P[P.cs >= 0].groupby(["gene", "prior", "cs"], sort=False):
@@ -242,7 +242,7 @@ def run(tests, expression, genotypes, out, attention=None, lam=None, folds=None,
         q, p = Q[Q.prior == name], P[P.prior == name]
         rows.append({"prior": name, "lambda": "-" if name == "uniform" else " / ".join(dict.fromkeys(str(lams[f]) for f in (0, 1))),
                      "genes_tested": T.gene.nunique(), "tests": len(T), "M": M, "eGenes": len(egenes[name]),
-                     "eGenes_with_signal": q.gene.nunique(), "expGWAS_signals": len(q), "single_variant_signals": int((q.n_variants == 1).sum()),
+                     "eGenes_with_signal": q.gene.nunique(), "single_variant_signals": int((q.n_variants == 1).sum()),
                      "variants_PIP_gt_0_9": int((p.pip > 0.9).sum()), "mean_signal_size": round(float(q.n_variants.mean()), 3) if len(q) else np.nan})
     Sm = pd.DataFrame(rows)
 

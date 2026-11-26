@@ -53,13 +53,16 @@ On your own data, leave out `--n-tests`, `--lambda` and `--folds`: *M* is then t
 
 ## Recompute the attention (GPU)
 
+In the GPU environment (`download_reference.sh` also needs it, for `pysam`):
+
 ```bash
+conda activate plantdna-finemap-gpu
 bash examples/download_reference.sh        # TAIR10 from Ensembl Plants -> examples/arabidopsis/TAIR10.fa
 plantdna-finemap attention --model ATLASBIOINFO/PlantDNA-FM --genes results/genes.tsv \
     --fasta examples/arabidopsis/TAIR10.fa --tests examples/arabidopsis/tests_B2.tsv.gz --out results/attention
 ```
 
-`results/genes.tsv` is written by `run_example.sh` (`genes --all-biotypes`, which keeps the few tested genes that are not protein-coding). Then pass `--attention results/attention/attention.parquet` to `finemap`. `--model` also takes a local model directory. On an RTX 5090 the 4,873 genes (10,544 windows) take 3 h 58 min; add `--only genes.txt` (one gene ID per line) to score a few genes first. The result matches the shipped scores (the paper's): the largest relative difference over the 1,307,160 scores is 2.6 × 10⁻⁷.
+`results/genes.tsv` is written by `run_example.sh` (`genes --all-biotypes`, which keeps the few tested genes that are not protein-coding). Then pass `--attention results/attention/attention.parquet` to `finemap`. `--model` also takes a local model directory. On an RTX 5090 the 4,873 genes (10,544 windows) take 3 h 58 min; add `--only genes.txt` (one gene ID per line) to score a few genes first. The result matches the shipped scores (the paper's): the largest relative difference over the 1,307,160 scores is 2.6 × 10⁻⁷. On other GPUs or library versions the scores can differ slightly (2 × 10⁻⁶ on an L40S with PyTorch 2.15 and transformers 5.24), with the same within-gene ranks, so the prior weights are unchanged.
 
 ## Sources
 

@@ -2,13 +2,14 @@
 
 expGWAS fine-mapping in plant populations with PlantDNA-FM attention priors: weighted Bonferroni eGene detection and SuSiE fine-mapping.
 
-Association panels in plants are small and highly structured, so an expression GWAS (expGWAS) signal usually points to a block of variants in near-perfect linkage disequilibrium rather than to one variant. This code uses attention from [PlantDNA-FM](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM), a plant DNA foundation model with a 16-kb context, as a prior that ranks the variants within each gene, and applies the same prior to eGene detection and to fine-mapping.
+Association panels in plants are small and highly structured, so an expression GWAS (expGWAS) signal usually points to a block of variants in near-perfect linkage disequilibrium rather than to one variant. This code uses attention from [PlantDNA-FM](https://huggingface.co/ATLASBIOINFO/PlantDNA-FM), a plant DNA foundation model with a 16-kb context at single-nucleotide resolution, pre-trained with masked nucleotide modelling on 260 plant species, as a prior that ranks the variants within each gene, and applies the same prior to eGene detection and to fine-mapping.
 
 Definitions used throughout:
 
 - **expGWAS**: association of the expression of each gene with the variants in and around it (gene body ± 10 kb).
 - **eGene**: a gene with at least one significant variant.
 - **expGWAS signal**: a 95% credible set from SuSiE fine-mapping of an eGene. A gene can have several signals.
+- **single-variant signal**: a credible set with one variant.
 
 ## Contents
 
@@ -351,12 +352,21 @@ Only the tests of one gene are used and *M* is its number of variants (Bonferron
 
 ## Results in the paper
 
+Full cohorts, uniform prior versus PlantDNA-FM prior (λ cross-fitted over chromosome halves):
+
 | | uniform prior | PlantDNA-FM prior | cross-fitted λ (fold 1 / fold 2) |
 |---|---|---|---|
 | *A. thaliana*, batch B2, 471 accessions: eGenes | 4,283 | 4,479 | 1.35 / 1.65 (chromosomes 1–3 / 4–5) |
+| *A. thaliana*: single-variant signals | 2,560 | 2,703 | |
 | *A. thaliana*: expGWAS signals (95% credible sets) | 6,810 | 7,009 | |
 | maize, 263 lines: eGenes | 8,557 | 8,758 | 1.25 / 1.85 (chromosomes 1–5 / 6–10) |
+| maize: single-variant signals | 3,726 | 3,980 | |
 | maize: expGWAS signals (95% credible sets) | 14,424 | 14,824 | |
+
+- **Benchmark against other priors.** Gain in cross-validated log marginal likelihood over the uniform prior: PlantDNA-FM +3,857 ± 86 (*A. thaliana*) and +4,834 ± 99 (maize), the highest of ten attention-based DNA language models (next best: Nucleotide Transformer v3, +2,822 ± 85, and Nucleotide Transformer v2, +4,141 ± 86) and above PhyloP / PhastCons conservation (+368 / +355 and +803 / +796). Attention from a randomly initialised PlantDNA-FM gives no gain, and zero-shot ISM scores did not substantially improve on the uniform prior.
+- **Down-sampling.** With 100 accessions, the prior detected 14.0% more eGenes in *A. thaliana* and 8.1% more in maize, and 25.9% / 18.3% more single-variant credible sets; 97.6–99.9% of the eGenes found with the prior in subsets were eGenes in the full cohort. The gain corresponds to 7–13% more accessions with the uniform prior.
+- **False positives.** In null data and in simulations with causal variants placed at random or preferentially at low-attention positions, the cross-fitted prior performed like the uniform prior: no false eGenes and almost no false fine-mapped variants.
+- **Function.** Variants with PIP > 0.9 only with the PlantDNA-FM prior are 1.7-fold enriched in leaf accessible chromatin (P = 1 × 10⁻⁷); those only with the uniform prior are not.
 
 ## Precomputed attention
 
@@ -382,7 +392,9 @@ Checked against the analysis in the paper:
 
 ## Citation
 
-Yu H., Korte A., Voichek Y., Menon G., Sun W., Dean C., Nordborg M., Zhang H. & Ding Y. DNA foundation model priors improve fine-mapping in plant populations (submitted).
+Yu H., Korte A., Menon G., Sun W., Dean C., Nordborg M., Zhang H. & Ding Y. Plant DNA foundation model prioritises functional variants for fine-mapping (submitted).
+
+Extended Data Tables 1 and 2 of the paper: Zenodo, [doi:10.5281/zenodo.24562875](https://doi.org/10.5281/zenodo.24562875) (CC BY 4.0).
 
 SuSiE: Wang G., Sarkar A., Carbonetto P. & Stephens M. A simple new approach to variable selection in regression, with application to genetic fine mapping. *J. R. Stat. Soc. B* 82, 1273–1300 (2020).
 
